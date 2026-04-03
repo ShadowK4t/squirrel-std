@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label'
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-
   async function handleSubmit(formData: FormData) {
     setLoading(true)
     setError(null)
@@ -17,6 +16,8 @@ export default function LoginPage() {
     if (result?.error) {
       setError(result.error)
       setLoading(false)
+    } else {
+      window.location.href = '/board'
     }
   }
 
