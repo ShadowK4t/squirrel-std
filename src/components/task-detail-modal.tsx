@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { IconClipboard, IconBooks, IconX, IconCheck, IconPencil, IconDeviceFloppy, IconLink, IconPlus } from '@tabler/icons-react'
+import { IconClipboard, IconBooks, IconX, IconCheck, IconPencil, IconDeviceFloppy, IconLink, IconPlus, IconTrash } from '@tabler/icons-react'
 
 type Status   = { id: string; label: string; color: string }
 type User     = { id: string; full_name: string }
@@ -74,6 +74,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   const [loading, setLoading]           = useState(true)
   const [submitting, setSubmitting]     = useState(false)
   const [editing, setEditing]           = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // Edit mode state
   const [editTitle, setEditTitle]             = useState('')
@@ -200,6 +201,13 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
     } : prev)
   }
 
+  async function handleDelete() {
+    const supabase = createClient()
+    await supabase.from('tasks').delete().eq('id', taskId)
+    onUpdated()
+    onClose()
+  }
+
   async function submitComment() {
     if (!comment.trim()) return
     setSubmitting(true)
@@ -275,6 +283,19 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
                 </button>
               : <button onClick={startEditing} className="text-sq-muted hover:text-white transition-colors">
                   <IconPencil size={18} />
+                </button>
+            }
+            {confirmDelete
+              ? <div className="flex items-center gap-2">
+                  <button onClick={handleDelete} className="text-xs text-white bg-sq-danger px-2 py-1 rounded font-semibold hover:opacity-80 transition-opacity">
+                    Delete
+                  </button>
+                  <button onClick={() => setConfirmDelete(false)} className="text-sq-muted hover:text-white transition-colors">
+                    <IconX size={14} />
+                  </button>
+                </div>
+              : <button onClick={() => setConfirmDelete(true)} className="text-sq-muted hover:text-sq-danger transition-colors">
+                  <IconTrash size={18} />
                 </button>
             }
             <button onClick={onClose} className="text-sq-muted hover:text-white transition-colors">

@@ -29,7 +29,7 @@ type Task = {
   needs_acceptance: boolean
   start_date: string | null
   assignee: string | null
-  parent: { title: string }[] | { title: string } | null
+  parent_id: string | null
   assignee_user: { full_name: string } | null
   reviewer_user: { full_name: string } | null
   subtasks: { count: number }[]
@@ -57,8 +57,7 @@ function initials(name: string): string {
 }
 
 const TASK_SELECT = `
-  id, type, title, description, version, priority, status_id, needs_acceptance, start_date, assignee,
-  parent:tasks!parent_id(title),
+  id, type, title, description, version, priority, status_id, needs_acceptance, start_date, assignee, parent_id,
   assignee_user:users!assignee(full_name),
   reviewer_user:users!reviewer_id(full_name),
   subtasks(count),
@@ -80,6 +79,7 @@ export default function BoardPage() {
   const [showFilter, setShowFilter]               = useState(false)
   const [filterPriorities, setFilterPriorities]   = useState<Set<number>>(new Set())
   const [filterBoards, setFilterBoards]           = useState<Set<string>>(new Set())
+  const [filterTypes, setFilterTypes]             = useState<Set<string>>(new Set())
   const [filterUsers, setFilterUsers]             = useState<Set<string>>(new Set())
   const filterRef = useRef<HTMLDivElement>(null)
 
@@ -132,6 +132,10 @@ export default function BoardPage() {
     setFilterBoards(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
   }
 
+  function toggleType(type: string) {
+    setFilterTypes(prev => { const n = new Set(prev); n.has(type) ? n.delete(type) : n.add(type); return n })
+  }
+
   function toggleUserFilter(userId: string) {
     setFilterUsers(prev => {
       const next = new Set(prev)
@@ -143,6 +147,7 @@ export default function BoardPage() {
   function clearFilters() {
     setFilterPriorities(new Set())
     setFilterBoards(new Set())
+    setFilterTypes(new Set())
     setSearch('')
     if (currentUserId) setFilterUsers(new Set([currentUserId]))
   }
@@ -150,6 +155,7 @@ export default function BoardPage() {
   const allBoards = Array.from(new Set(tasks.flatMap(t => t.task_boards.map(tb => tb.board.name))))
 
   const filteredTasks = tasks.filter(task => {
+    if (filterTypes.size > 0 && !filterTypes.has(task.type)) return false
     if (filterUsers.size > 0 && (!task.assignee || !filterUsers.has(task.assignee))) return false
     if (search && !task.title.toLowerCase().includes(search.toLowerCase()) &&
         !task.description?.toLowerCase().includes(search.toLowerCase())) return false
@@ -158,7 +164,8 @@ export default function BoardPage() {
     return true
   })
 
-  const hasActiveFilters = filterPriorities.size > 0 || filterBoards.size > 0
+  const storyTitleMap = Object.fromEntries(tasks.filter(t => t.type === 'story').map(t => [t.id, t.title]))
+  const hasActiveFilters = filterPriorities.size > 0 || filterBoards.size > 0 || filterTypes.size > 0
   const requestStatus    = statuses.find(s => s.label === 'Request')
   const visibleStatuses  = statuses.filter(s => s.label !== 'Request' && s.label !== 'Done')
 
@@ -210,13 +217,27 @@ export default function BoardPage() {
             <span className="text-sm">Filter</span>
             {hasActiveFilters && (
               <span className="bg-sq-accent text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
-                {filterPriorities.size + filterBoards.size}
+                {filterPriorities.size + filterBoards.size + filterTypes.size}
               </span>
             )}
           </button>
 
           {showFilter && (
             <div className="absolute top-10 left-0 z-40 bg-sq-col border border-sq-muted rounded-xl p-4 w-64 flex flex-col gap-4 shadow-xl">
+              <div className="flex flex-col gap-2">
+                <span className="text-white text-sm font-semibold">Type</span>
+                <div className="flex flex-col gap-1">
+                  {(['task', 'story'] as const).map(type => {
+                    const active = filterTypes.has(type)
+                    return (
+                      <button key={type} onClick={() => toggleType(type)}
+                        className={`flex items-center gap-2 px-2 py-1 rounded text-sm text-left capitalize transition-colors ${active ? 'bg-sq-accent text-white' : 'text-sq-nav-inactive hover:text-white'}`}>
+                        {type}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
               <div className="flex flex-col gap-2">
                 <span className="text-white text-sm font-semibold">Priority</span>
                 <div className="flex flex-col gap-1">
@@ -332,17 +353,12 @@ export default function BoardPage() {
                     )}
 
                     {/* Row 3: Story */}
-                    {(() => {
-                      const parentTitle = Array.isArray(task.parent)
-                        ? task.parent[0]?.title
-                        : task.parent?.title
-                      return parentTitle ? (
-                        <div className="flex items-center gap-2 pl-1">
-                          <IconBooks size={15} className="text-sq-muted shrink-0" />
-                          <span className="text-white text-xs">{parentTitle}</span>
-                        </div>
-                      ) : null
-                    })()}
+                    {task.type === 'task' && task.parent_id && storyTitleMap[task.parent_id] && (
+                      <div className="flex items-center gap-2 pl-1">
+                        <IconBooks size={15} className="text-sq-muted shrink-0" />
+                        <span className="text-white text-xs">{storyTitleMap[task.parent_id]}</span>
+                      </div>
+                    )}
 
                     {/* Row 4: Pills (teams + boards) */}
                     {(task.task_teams.length > 0 || task.task_boards.length > 0) && (

@@ -6,7 +6,8 @@ import { IconClipboard, IconX, IconPlus, IconTrash, IconBooks } from '@tabler/ic
 
 type Status = { id: string; label: string; color: string }
 type User   = { id: string; full_name: string }
-type Task   = { id: string; title: string }
+type Story  = { id: string; title: string; task_boards: { board_id: string }[] }
+type Board  = { id: string; name: string; team_id: string }
 type Team   = { id: string; name: string; color: string }
 
 const PRIORITY_LABELS: Record<number, string> = {
@@ -23,7 +24,8 @@ type Props = {
 export default function TaskModal({ onClose, onCreated, defaultType = 'task', defaultParentId = '' }: Props) {
   const [statuses, setStatuses]       = useState<Status[]>([])
   const [users, setUsers]             = useState<User[]>([])
-  const [stories, setStories]         = useState<Task[]>([])
+  const [stories, setStories]         = useState<Story[]>([])
+  const [boards, setBoards]           = useState<Board[]>([])
   const [teams, setTeams]             = useState<Team[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [loading, setLoading]         = useState(false)
@@ -40,6 +42,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
   const [startDate, setStartDate]     = useState('')
   const [parentId, setParentId]       = useState(defaultParentId)
   const [teamId, setTeamId]           = useState('')
+  const [boardId, setBoardId]         = useState('')
   const [subtasks, setSubtasks]       = useState<string[]>([''])
 
   useEffect(() => {
@@ -57,8 +60,11 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
     supabase.from('users').select('id, full_name')
       .then(({ data }) => { if (data) setUsers(data) })
 
-    supabase.from('tasks').select('id, title').eq('type', 'story')
-      .then(({ data }) => { if (data) setStories(data) })
+    supabase.from('tasks').select('id, title, task_boards(board_id)').eq('type', 'story')
+      .then(({ data }) => { if (data) setStories(data as unknown as Story[]) })
+
+    supabase.from('boards').select('id, name, team_id').order('name')
+      .then(({ data }) => { if (data) setBoards(data) })
 
     supabase.from('teams').select('id, name, color').order('name')
       .then(({ data }) => { if (data) setTeams(data) })
@@ -71,6 +77,15 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
     })
   }, [])
 
+  // When a parent story is selected, inherit its board
+  useEffect(() => {
+    if (!parentId) return
+    const parent = stories.find(s => s.id === parentId)
+    const inherited = parent?.task_boards[0]?.board_id
+    if (inherited) setBoardId(inherited)
+  }, [parentId, stories])
+
+  const teamBoards = boards.filter(b => b.team_id === teamId)
   const activeStatus = statuses.find(s => s.id === statusId)
 
   function addSubtask() { setSubtasks(prev => [...prev, '']) }
@@ -121,6 +136,10 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
     if (teamId) {
       await supabase.from('task_teams').insert({ task_id: task.id, team_id: teamId, is_responsible: true })
+    }
+
+    if (boardId) {
+      await supabase.from('task_boards').insert({ task_id: task.id, board_id: boardId })
     }
 
     setLoading(false)
@@ -300,10 +319,20 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
             <div className="flex flex-col gap-1">
               <label className="text-white text-sm font-medium">Team</label>
-              <select value={teamId} onChange={e => setTeamId(e.target.value)}
+              <select value={teamId} onChange={e => { setTeamId(e.target.value); setBoardId('') }}
                 className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
                 <option value="">Select...</option>
                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-white text-sm font-medium">Board</label>
+              <select value={boardId} onChange={e => setBoardId(e.target.value)}
+                className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none"
+                disabled={!teamId && !boardId}>
+                <option value="">Select...</option>
+                {teamBoards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
 

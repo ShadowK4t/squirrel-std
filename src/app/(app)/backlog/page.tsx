@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  IconChevronRight, IconClipboard, IconSubtask, IconBooks, IconPlus,
+  IconClipboard, IconSubtask, IconBooks, IconPlus,
   IconSearch, IconAdjustmentsHorizontal, IconX, IconEye, IconEyeOff,
 } from '@tabler/icons-react'
 import TaskDetailModal from '@/components/task-detail-modal'
@@ -59,7 +59,6 @@ export default function BacklogPage() {
   const [showTeamPicker, setShowTeamPicker] = useState(false)
   const teamPickerRef = useRef<HTMLDivElement>(null)
 
-  const [openStories, setOpenStories]   = useState<Set<string>>(new Set())
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [modalConfig, setModalConfig]   = useState<{ type: 'story' | 'task'; parentId?: string } | null>(null)
 
@@ -100,10 +99,6 @@ export default function BacklogPage() {
       localStorage.setItem(HIDDEN_TEAMS_KEY, JSON.stringify([...next]))
       return next
     })
-  }
-
-  function toggleStory(id: string) {
-    setOpenStories(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
   function togglePriority(p: number) {
@@ -277,23 +272,12 @@ export default function BacklogPage() {
               const boardTasks = tasksForBoard(board.id)
               if (boardTasks.length === 0) return null
 
-              const stories  = boardTasks.filter(t => t.type === 'story')
-              const orphans  = boardTasks.filter(t => t.type === 'task' && !t.parent_id)
-              const childMap = boardTasks.reduce<Record<string, Task[]>>((acc, t) => {
-                if (t.type === 'task' && t.parent_id) {
-                  ;(acc[t.parent_id] ??= []).push(t)
-                }
-                return acc
-              }, {})
+              const storyTitleMap = Object.fromEntries(
+                boardTasks.filter(t => t.type === 'story').map(t => [t.id, t.title])
+              )
+              const allFiltered = boardTasks.filter(matchesFilters)
 
-              // Apply filters: a story is visible if it matches OR any of its children match
-              const filteredStories = stories.filter(story => {
-                const children = childMap[story.id] ?? []
-                return matchesFilters(story) || children.some(matchesFilters)
-              })
-              const filteredOrphans = orphans.filter(matchesFilters)
-
-              if (filteredStories.length === 0 && filteredOrphans.length === 0) return null
+              if (allFiltered.length === 0) return null
 
               return (
                 <div key={board.id} className="flex flex-col rounded-xl overflow-hidden border border-sq-col">
@@ -301,7 +285,7 @@ export default function BacklogPage() {
                   <div className="flex items-center gap-2 px-4 py-2 border-b border-sq-col" style={{ backgroundColor: board.color + '22' }}>
                     <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: board.color }} />
                     <span className="text-white font-semibold text-sm">{board.name}</span>
-                    <span className="text-white/40 text-xs ml-1">{filteredStories.length + filteredOrphans.length} items</span>
+                    <span className="text-white/40 text-xs ml-1">{allFiltered.length} items</span>
                   </div>
 
                   <div className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2 bg-sq-col border-b border-sq-col/60">
@@ -315,76 +299,23 @@ export default function BacklogPage() {
                   </div>
 
                   <div className="flex flex-col divide-y divide-sq-col/40 bg-sq-card">
-
-                    {filteredStories.map(story => {
-                      const allChildren     = childMap[story.id] ?? []
-                      const visibleChildren = allChildren.filter(matchesFilters)
-                      const isOpen          = openStories.has(story.id)
-
-                      return (
-                        <div key={story.id}>
-                          <div
-                            className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center cursor-pointer group"
-                            onClick={() => allChildren.length > 0 ? toggleStory(story.id) : setSelectedTaskId(story.id)}
-                          >
-                            <div className="flex items-center justify-center">
-                              {allChildren.length > 0
-                                ? <IconChevronRight size={14} className="text-white/40 transition-transform"
-                                    style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
-                                : <IconBooks size={14} className="text-sq-accent" />
-                              }
-                            </div>
-                            <div className="flex items-center gap-2 min-w-0">
-                              {allChildren.length > 0 && <IconBooks size={14} className="text-sq-accent shrink-0" />}
-                              <span
-                                className="text-white text-sm font-semibold truncate hover:underline"
-                                onClick={e => { e.stopPropagation(); setSelectedTaskId(story.id) }}
-                              >
-                                {story.title}
-                              </span>
-                              <button
-                                onClick={e => { e.stopPropagation(); if (!isOpen) toggleStory(story.id); setModalConfig({ type: 'task', parentId: story.id }) }}
-                                className="ml-1 flex items-center gap-0.5 text-sq-muted hover:text-white text-xs opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                              >
-                                <IconPlus size={12} /> Add task
-                              </button>
-                            </div>
-                            <StatusBadge status={statusMap[story.status_id]} />
-                            <span className="text-white text-xs">{timeElapsed(story.start_date)}</span>
-                            <PriorityBadge priority={story.priority} />
-                            <span className="text-white text-xs truncate">{story.assignee_user?.full_name ?? '—'}</span>
-                            <span className="text-white/50 text-xs text-center">{story.subtasks[0]?.count ?? 0}</span>
-                          </div>
-
-                          {isOpen && visibleChildren.map(child => (
-                            <div key={child.id} onClick={() => setSelectedTaskId(child.id)}
-                              className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2 hover:bg-sq-col/40 transition-colors items-center cursor-pointer bg-sq-col/20">
-                              <span />
-                              <div className="flex items-center gap-2 min-w-0 pl-5">
-                                <IconClipboard size={13} className="text-sq-task-icon shrink-0" />
-                                <span className="text-white text-xs truncate">{child.title}</span>
-                              </div>
-                              <StatusBadge status={statusMap[child.status_id]} />
-                              <span className="text-white text-xs">{timeElapsed(child.start_date)}</span>
-                              <PriorityBadge priority={child.priority} />
-                              <span className="text-white text-xs truncate">{child.assignee_user?.full_name ?? '—'}</span>
-                              <div className="flex items-center justify-center gap-1 text-white/40 text-xs">
-                                <IconSubtask size={11} />
-                                <span>{child.subtasks[0]?.count ?? 0}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })}
-
-                    {filteredOrphans.map(task => (
+                    {allFiltered.map(task => (
                       <div key={task.id} onClick={() => setSelectedTaskId(task.id)}
                         className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center cursor-pointer">
                         <div className="flex items-center justify-center">
-                          <IconClipboard size={14} className="text-sq-task-icon" />
+                          {task.type === 'story'
+                            ? <IconBooks size={14} className="text-sq-accent" />
+                            : <IconClipboard size={13} className="text-sq-task-icon" />
+                          }
                         </div>
-                        <span className="text-white text-sm truncate">{task.title}</span>
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-sm truncate ${task.type === 'story' ? 'text-white font-semibold' : 'text-white'}`}>
+                            {task.title}
+                          </span>
+                          {task.type === 'task' && task.parent_id && storyTitleMap[task.parent_id] && (
+                            <span className="text-sq-muted text-xs truncate">↳ {storyTitleMap[task.parent_id]}</span>
+                          )}
+                        </div>
                         <StatusBadge status={statusMap[task.status_id]} />
                         <span className="text-white text-xs">{timeElapsed(task.start_date)}</span>
                         <PriorityBadge priority={task.priority} />
