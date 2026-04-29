@@ -25,8 +25,10 @@ export default function ProfileModal({ onClose }: Props) {
   const [teams, setTeams]         = useState<Team[]>([])
   const [jobTitles, setJobTitles] = useState<JobTitle[]>([])
   const [loading, setLoading]     = useState(true)
+  const [visible, setVisible]     = useState(false)
 
   useEffect(() => {
+    requestAnimationFrame(() => setVisible(true))
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
@@ -42,81 +44,105 @@ export default function ProfileModal({ onClose }: Props) {
     })
   }, [])
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 backdrop-blur-sm bg-black/20" onClick={onClose} />
+  function handleClose() {
+    setVisible(false)
+    setTimeout(onClose, 250)
+  }
 
-      <div className="relative bg-sq-col rounded-xl w-175 max-h-[90vh] overflow-y-auto">
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 transition-opacity duration-250"
+        style={{ opacity: visible ? 1 : 0 }}
+        onClick={handleClose}
+      />
+
+      {/* Side panel */}
+      <div
+        className="relative w-172.5 h-full bg-sq-col rounded-l-xl flex flex-col overflow-y-auto transition-transform duration-250"
+        style={{ transform: visible ? 'translateX(0)' : 'translateX(100%)' }}
+      >
 
         {/* Close */}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-4 right-4 text-sq-muted hover:text-white transition-colors z-10"
         >
-          <IconX size={20} />
+          <IconX size={22} />
         </button>
 
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <span className="text-white/55 text-sm">Loading...</span>
+            <span className="text-sq-muted text-sm">Loading...</span>
           </div>
         ) : profile && (
-          <div className="flex flex-col gap-6 p-6">
+          <div className="flex flex-col gap-6 p-7 pt-14">
 
             {/* Profile card */}
-            <div className="bg-sq-card rounded-xl p-6 flex items-start gap-6">
-              <div className="w-28 h-28 rounded-full bg-sq-col flex items-center justify-center shrink-0">
+            <div className="bg-zinc-400 rounded-sm p-3 flex items-center gap-5">
+              <div className="w-30 h-30 rounded-full bg-sq-bg flex items-center justify-center shrink-0">
                 <span className="text-white text-3xl font-bold">{initials(profile.full_name)}</span>
               </div>
-              <div className="flex flex-col gap-1 pt-1">
-                <h2 className="text-white font-bold text-2xl">{profile.full_name}</h2>
-                <span className="text-white/55 text-sm">{ROLE_LABELS[profile.role] ?? profile.role}</span>
-
+              <div className="flex flex-col min-w-0">
+                <h2 className="text-white font-bold text-2xl leading-tight -mt-2">{profile.full_name}</h2>
                 {teams.length > 0 && (
-                  <div className="mt-3 flex flex-col gap-1">
-                    <span className="text-white font-bold text-base">Team</span>
-                    <div className="flex flex-wrap gap-x-3">
-                      {teams.map((t, i) => (
-                        <span key={i} className="text-white/55 text-sm">{t.name}</span>
-                      ))}
-                    </div>
+                  <div className="flex flex-wrap gap-x-4">
+                    {teams.map((t, i) => (
+                      <span key={i} className="text-zinc-800 text-[13.5px]">{t.name}</span>
+                    ))}
                   </div>
                 )}
+                <h3 className='text-white font-bold text-[17px] mt-4'>Working on ...</h3>
+                {profile.description && (
+                  <span className="text-white text-sm mt-1 line-clamp-2">{profile.description}</span>
+                )}
+                
               </div>
             </div>
 
             {/* Personal Information */}
             <div className="flex flex-col gap-4">
-              <h3 className="text-white font-bold text-xl">Personal Information</h3>
+              <h3 className="text-white font-bold text-lg">Personal Information</h3>
 
-              <div className="bg-sq-card rounded-xl p-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-7">
+
                 <div className="flex flex-col gap-1">
-                  <span className="text-white/55 text-xs font-medium uppercase tracking-wide">Email</span>
-                  <span className="text-white text-sm">{profile.email}</span>
+                  <span className="text-white text-sm font-semibold">Preferred Name</span>
+                  <div className="flex items-center h-11 px-4 rounded-full border border-sq-muted">
+                    <span className="text-sq-muted text-sm">{profile.full_name}</span>
+                  </div>
                 </div>
 
-                <div className="w-full h-px bg-white/5" />
-
                 <div className="flex flex-col gap-1">
-                  <span className="text-white/55 text-xs font-medium uppercase tracking-wide">Description</span>
-                  <span className="text-white text-sm">
-                    {profile.description || <span className="text-white/40 italic">No description yet</span>}
-                  </span>
+                  <span className="text-white text-sm font-semibold">Email</span>
+                  <div className="flex items-center h-11 px-4 rounded-full border border-sq-muted">
+                    <span className="text-sq-muted text-sm">{profile.email}</span>
+                  </div>
                 </div>
 
                 {jobTitles.length > 0 && (
-                  <>
-                    <div className="w-full h-px bg-white/5" />
-                    <div className="flex flex-col gap-2">
-                      <span className="text-white/55 text-xs font-medium uppercase tracking-wide">Job Titles</span>
-                      <div className="flex flex-wrap gap-2">
-                        {jobTitles.map((j, i) => (
-                          <span key={i} className="bg-sq-col text-white text-xs px-3 py-1 rounded-full">{j.name}</span>
-                        ))}
-                      </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-white text-sm font-semibold">Job Titles</span>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {jobTitles.map((j, i) => (
+                        <span key={i} className="bg-sq-bg text-white text-xs px-3 py-1.5 rounded-full">{j.name}</span>
+                      ))}
                     </div>
-                  </>
+                  </div>
                 )}
+
+                <div className="flex flex-col gap-2">
+                  <span className="text-white text-sm font-semibold">User Type</span>
+                  <span className="text-white/70 text-sm">{ROLE_LABELS[profile.role] ?? profile.role}</span>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="text-white text-sm font-semibold">Tier</span>
+                  <span className="text-white/70 text-sm">{ROLE_LABELS[profile.role] ?? profile.role}</span>
+                </div>
+
               </div>
             </div>
 
