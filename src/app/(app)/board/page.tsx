@@ -45,6 +45,7 @@ const PRIORITY_LABELS: Record<number, string> = {
 function timeElapsed(startDate: string | null): string {
   if (!startDate) return ''
   const days = Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000)
+  if (days <= 0) return `${days} days`
   const weeks = Math.floor(days / 7)
   const rem = days % 7
   if (weeks === 0) return `${days} day${days !== 1 ? 's' : ''}`
