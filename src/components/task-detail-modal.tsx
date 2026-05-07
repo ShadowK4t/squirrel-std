@@ -9,7 +9,8 @@ type User     = { id: string; full_name: string }
 type Team     = { id: string; name: string; color: string }
 type Subtask      = { id: string; title: string; is_done: boolean; position: number }
 type LinkedTask   = { id: string; title: string; status: { label: string; color: string } }
-type Comment  = { id: string; content: string; created_at: string; user: { full_name: string } }
+type Comment  = { id: string; user_id: string; content: string; created_at: string; user: { full_name: string } }
+type Attachment = { id: string; url: string; file_name: string; type: string }
 
 type TaskDetail = {
   id: string
@@ -45,6 +46,14 @@ const PRIORITY_COLORS: Record<number, string> = {
   0: '#6B6B6B', 1: '#50fa7b', 2: '#F3A63A', 3: '#ffb86c', 4: '#B84040',
 }
 
+function renderWithMentions(content: string) {
+  return content.split(/(@\S+)/).map((part, i) =>
+    part.startsWith('@')
+      ? <span key={i} className="text-sq-accent font-semibold">{part}</span>
+      : part
+  )
+}
+
 function getElapsed(startDate: string | null): string {
   if (!startDate) return '—'
   const days = Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000)
@@ -65,12 +74,25 @@ type Props = {
 export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   const [task, setTask]             = useState<TaskDetail | null>(null)
   const [statuses, setStatuses]     = useState<Status[]>([])
+
   const [users, setUsers]           = useState<User[]>([])
   const [teams, setTeams]           = useState<Team[]>([])
   const [stories, setStories]       = useState<{ id: string; title: string }[]>([])
   const [linkedTasks, setLinkedTasks]   = useState<LinkedTask[]>([])
   const [allTasks, setAllTasks]         = useState<{ id: string; title: string }[]>([])
+
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
   const [comment, setComment]           = useState('')
+  const [mentionQuery, setMentionQuery]   = useState<string | null>(null)
+  const [mentionedIds, setMentionedIds]   = useState<string[]>([])
+
+
+  const [currentUser, setCurrentUser]       = useState<{ id: string; role: string } | null>(null)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editCommentText, setEditCommentText]   = useState('')
+
   const [loading, setLoading]           = useState(true)
   const [submitting, setSubmitting]     = useState(false)
   const [editing, setEditing]           = useState(false)
@@ -80,8 +102,9 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   const [editTitle, setEditTitle]             = useState('')
   const [editDescription, setEditDescription] = useState('')
 
+  const supabase = createClient()
+
   async function fetchTask() {
-    const supabase = createClient()
     const { data } = await supabase
       .from('tasks')
       .select(`
@@ -92,9 +115,10 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
         reviewer_user:users!reviewer_id(full_name),
         creator_user:users!created_by(full_name),
         subtasks(id, title, is_done, position),
-        comments(id, content, created_at, user:users!user_id(full_name)),
+        comments(id, user_id, content, created_at, user:users!user_id(full_name)),
         task_boards(board:boards(name, color)),
-        task_teams(is_responsible, team:teams(id, name, color))
+        task_teams(is_responsible, team:teams(id, name, color)),
+        task_attachments(id, url, file_name, type)
       `)
       .eq('id', taskId)
       .single()
@@ -102,8 +126,8 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
     if (data) {
       const t = data as unknown as TaskDetail
       setTask(t)
+      setAttachments((data as any).task_attachments ?? [])
       if (t.related_task_ids?.length > 0) {
-        const supabase = createClient()
         supabase
           .from('tasks')
           .select('id, title, status:statuses!status_id(label, color)')
@@ -118,7 +142,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
 
   useEffect(() => {
     fetchTask()
-    const supabase = createClient()
     supabase.from('statuses').select('id, label, color').order('position')
       .then(({ data }) => { if (data) setStatuses(data) })
     supabase.from('users').select('id, full_name')
@@ -129,6 +152,12 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
       .then(({ data }) => { if (data) setAllTasks(data) })
     supabase.from('tasks').select('id, title').eq('type', 'story').neq('id', taskId).order('title')
       .then(({ data }) => { if (data) setStories(data) })
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('users').select('id, role').eq('id', user.id).single()
+          .then(({ data }) => { if (data) setCurrentUser(data) })
+      }
+    })
   }, [taskId])
 
   function startEditing() {
@@ -140,7 +169,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
 
   async function saveEdit() {
     if (!task || !editTitle.trim()) return
-    const supabase = createClient()
     await supabase.from('tasks').update({
       title: editTitle.trim(),
       description: editDescription.trim() || null,
@@ -151,7 +179,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   }
 
   async function updateField(field: string, value: string | number | null) {
-    const supabase = createClient()
     await supabase.from('tasks').update({ [field]: value || null }).eq('id', taskId)
     setTask(prev => prev ? { ...prev, [field]: value || null } : prev)
     onUpdated()
@@ -160,7 +187,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   async function addLinkedTask(linkedId: string) {
     if (!task || !linkedId || task.related_task_ids.includes(linkedId)) return
     const updated = [...task.related_task_ids, linkedId]
-    const supabase = createClient()
     await supabase.from('tasks').update({ related_task_ids: updated }).eq('id', taskId)
     setTask(prev => prev ? { ...prev, related_task_ids: updated } : prev)
     const { data } = await supabase
@@ -175,7 +201,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   async function removeLinkedTask(linkedId: string) {
     if (!task) return
     const updated = task.related_task_ids.filter(id => id !== linkedId)
-    const supabase = createClient()
     await supabase.from('tasks').update({ related_task_ids: updated }).eq('id', taskId)
     setTask(prev => prev ? { ...prev, related_task_ids: updated } : prev)
     setLinkedTasks(prev => prev.filter(t => t.id !== linkedId))
@@ -183,7 +208,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   }
 
   async function updateTeam(teamId: string) {
-    const supabase = createClient()
     await supabase.from('task_teams').delete().eq('task_id', taskId).eq('is_responsible', true)
     if (teamId) {
       await supabase.from('task_teams').insert({ task_id: taskId, team_id: teamId, is_responsible: true })
@@ -193,7 +217,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   }
 
   async function toggleSubtask(subtask: Subtask) {
-    const supabase = createClient()
     await supabase.from('subtasks').update({ is_done: !subtask.is_done }).eq('id', subtask.id)
     setTask(prev => prev ? {
       ...prev,
@@ -202,7 +225,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   }
 
   async function handleDelete() {
-    const supabase = createClient()
     await supabase.from('tasks').delete().eq('id', taskId)
     onUpdated()
     onClose()
@@ -211,13 +233,71 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   async function submitComment() {
     if (!comment.trim()) return
     setSubmitting(true)
-    const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    await supabase.from('comments').insert({ task_id: taskId, user_id: user.id, content: comment.trim() })
+    const { data: newComment } = await supabase
+      .from('comments')
+      .insert({ task_id: taskId, user_id: user.id, content: comment.trim() })
+      .select('id')
+      .single()
+    if (mentionedIds.length > 0 && newComment) {
+      await supabase.from('comments_mentions').insert(
+        mentionedIds.map(uid => ({ comment_id: newComment.id, user_id: uid }))
+      )
+      setMentionedIds([])
+    }
     setComment('')
     setSubmitting(false)
     fetchTask()
+  }
+
+  async function handleEditComment(id: string) {
+    if (!editCommentText.trim()) return
+    await supabase.from('comments').update({ content: editCommentText.trim() }).eq('id', id)
+    setEditingCommentId(null)
+    fetchTask()
+  }
+
+  async function handleDeleteComment(id: string) {
+    await supabase.from('comments').delete().eq('id', id)
+    fetchTask()
+  }
+
+  function handleCommentChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value
+    setComment(val)
+    const match = val.slice(0, e.target.selectionStart).match(/@(\w*)$/)
+    setMentionQuery(match ? match[1] : null)
+  }
+
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const path = `${taskId}/${Date.now()}_${file.name}`
+    const { error } = await supabase.storage.from('task-images').upload(path, file)
+    if (error) return
+
+    const { data: { publicUrl } } = supabase.storage.from('task-images').getPublicUrl(path)
+    const { data: att } = await supabase.from('task_attachments').insert({
+      task_id: taskId,
+      url: publicUrl,
+      file_name: file.name,
+      type: 'image',
+      uploaded_by: user.id,
+    }).select('id, url, file_name, type').single()
+    if (att) setAttachments(prev => [...prev, att as Attachment])
+  }
+
+  async function handleDeleteAttachment(id: string, url: string) {
+    const path = url.split('/task-images/')[1]
+    await supabase.storage.from('task-images').remove([path])
+    await supabase.from('task_attachments').delete().eq('id', id)
+    setAttachments(prev => prev.filter(a => a.id !== id))
   }
 
   const activeStatus       = statuses.find(s => s.id === task?.status_id)
@@ -316,7 +396,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               {editing
                 ? <textarea
                     value={editDescription}
-                    onChange={e => setEditDescription(e.target.value)}
+                    onChange={handleCommentChange}
                     placeholder="Describe the task..."
                     rows={4}
                     className="bg-sq-col border border-sq-muted rounded text-white text-sm p-3 outline-none resize-none placeholder:text-sq-muted"
@@ -325,6 +405,51 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
                     {task.description || <span className="italic text-sq-muted">No description</span>}
                   </p>
               }
+            </div>
+
+            {/* Attachments */}
+            <div className="flex flex-col gap-2">
+              <label className="text-white font-semibold text-base">Attachments</label>
+
+              {/* Thumbnails */}
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {attachments.map(a => (
+                    <div key={a.id} className="relative group w-20 h-20">
+                      <img
+                        src={a.url}
+                        alt={a.file_name}
+                        onClick={() => setPreviewUrl(a.url)}
+                        className="w-20 h-20 object-cover rounded-lg cursor-pointer"
+                      />
+                      {editing && (
+                        <button
+                          onClick={() => handleDeleteAttachment(a.id, a.url)}
+                          className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <IconX size={10} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upload - edit mode*/}
+              {editing && (
+                <>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleUpload}
+                    className="hidden"
+                  />
+                  <label htmlFor="file-upload" className="flex items-center gap-1.5 text-sq-muted hover:text-white text-xs cursor-pointer transition-colors w-fit">
+                    <IconPlus size={14} /> Upload image
+                  </label>
+                </>
+              )}
             </div>
 
             {/* Subtasks */}
@@ -432,30 +557,90 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               </label>
               {task.comments.length > 0 && (
                 <div className="flex flex-col gap-3">
-                  {task.comments.map(c => (
-                    <div key={c.id} className="bg-sq-col rounded-lg p-3 flex flex-col gap-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sq-accent text-xs font-semibold">{c.user?.full_name}</span>
-                        <span className="text-sq-muted text-xs">{new Date(c.created_at).toLocaleDateString()}</span>
+                  {task.comments.map(c => {
+                    const isAuthor = currentUser?.id === c.user_id
+                    const isAdmin  = currentUser?.role === 'admin'
+                    return (
+                      <div key={c.id} className="bg-sq-col rounded-lg p-3 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sq-accent text-xs font-semibold">{c.user?.full_name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sq-muted text-xs">{new Date(c.created_at).toLocaleDateString()}</span>
+                            {isAuthor && (
+                              <button onClick={() => { setEditingCommentId(c.id); setEditCommentText(c.content) }}
+                                className="text-sq-muted hover:text-white transition-colors">
+                                <IconPencil size={12} />
+                              </button>
+                            )}
+                            {(isAuthor || isAdmin) && (
+                              <button onClick={() => handleDeleteComment(c.id)}
+                                className="text-sq-muted hover:text-sq-danger transition-colors">
+                                <IconTrash size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {editingCommentId === c.id
+                          ? <div className="flex flex-col gap-1">
+                              <textarea
+                                value={editCommentText}
+                                onChange={e => setEditCommentText(e.target.value)}
+                                rows={2}
+                                className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-1.5 outline-none resize-none"
+                              />
+                              <div className="flex gap-2">
+                                <button onClick={() => handleEditComment(c.id)}
+                                  className="text-xs bg-sq-accent text-white px-2 py-1 rounded font-semibold hover:opacity-90">
+                                  Save
+                                </button>
+                                <button onClick={() => setEditingCommentId(null)}
+                                  className="text-xs text-sq-muted hover:text-white transition-colors">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          : <p className="text-white text-sm">{renderWithMentions(c.content)}</p>
+                        }
                       </div>
-                      <p className="text-white text-sm">{c.content}</p>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={comment}
-                  onChange={e => setComment(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && submitComment()}
-                  placeholder="Add a comment..."
-                  className="flex-1 bg-sq-col border border-sq-muted rounded-lg text-white text-sm px-3 py-2 outline-none placeholder:text-sq-muted"
-                />
+                <div className="relative flex-1">
+                  <textarea
+                    value={comment}
+                    onChange={handleCommentChange}
+                    placeholder="Add a comment..."
+                    rows={2}
+                    className="w-full h-10 mt-2 bg-sq-col border border-sq-muted rounded-lg text-white text-sm px-3 py-2 outline-none placeholder:text-sq-muted resize-none"
+                  />
+                  {mentionQuery !== null && (
+                    <div className="absolute bottom-full mb-1 left-0 bg-sq-card border border-sq-muted rounded-lg overflow-hidden z-10 w-48">
+                      {users
+                        .filter(u => u.full_name.toLowerCase().includes(mentionQuery.toLowerCase()))
+                        .map(u => (
+                          <button
+                            key={u.id}
+                            onMouseDown={e => {
+                              e.preventDefault()
+                              setComment(prev => prev.replace(/@\w*$/, `@${u.full_name} `))
+                              setMentionedIds(prev => [...prev, u.id])
+                              setMentionQuery(null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-white text-sm hover:bg-sq-col transition-colors"
+                          >
+                            {u.full_name}
+                          </button>
+                        ))
+                      }
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={submitComment}
                   disabled={submitting || !comment.trim()}
-                  className="bg-sq-accent text-white text-sm px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="bg-sq-accent h-10 mt-2 text-white text-sm px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
                   Send
                 </button>
@@ -594,6 +779,12 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
           </div>
         </div>
       </div>
+
+      {previewUrl && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80" onClick={() => setPreviewUrl(null)}>
+          <img src={previewUrl} className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain" />
+        </div>
+      )}
     </div>
   )
 }

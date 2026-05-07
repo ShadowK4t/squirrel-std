@@ -22,6 +22,8 @@ type Props = { onClose: () => void }
 
 export default function ProfileModal({ onClose }: Props) {
   const [profile, setProfile]     = useState<Profile | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
   const [teams, setTeams]         = useState<Team[]>([])
   const [jobTitles, setJobTitles] = useState<JobTitle[]>([])
   const [loading, setLoading]     = useState(true)
@@ -37,9 +39,13 @@ export default function ProfileModal({ onClose }: Props) {
         supabase.from('user_teams').select('team:teams(name, color)').eq('user_id', user.id),
         supabase.from('user_job_titles').select('job_title:job_titles(name)').eq('user_id', user.id),
       ])
-      if (profileRes.data) setProfile(profileRes.data)
-      if (teamsRes.data)   setTeams(teamsRes.data.map((r: any) => r.team))
-      if (jobsRes.data)    setJobTitles(jobsRes.data.map((r: any) => r.job_title))
+      if (profileRes.data) {
+        setProfile(profileRes.data)
+        setEditName(profileRes.data?.full_name)
+        setEditEmail(profileRes.data?.email)
+      }
+      if (teamsRes.data) setTeams(teamsRes.data.map((r: any) => r.team))
+      if (jobsRes.data) setJobTitles(jobsRes.data.map((r: any) => r.job_title))
       setLoading(false)
     })
   }, [])
@@ -47,6 +53,13 @@ export default function ProfileModal({ onClose }: Props) {
   function handleClose() {
     setVisible(false)
     setTimeout(onClose, 250)
+  }
+  async function handleSave(){
+    const supabase = createClient()
+    const{ data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('users').update({full_name: editName, email: editEmail}).eq('id', user.id)
+    setProfile(p => p ? {...p, full_name: editName, email: editEmail } : p)
   }
 
   return (
@@ -111,14 +124,16 @@ export default function ProfileModal({ onClose }: Props) {
                 <div className="flex flex-col gap-1">
                   <span className="text-white text-sm font-semibold">Preferred Name</span>
                   <div className="flex items-center h-11 px-4 rounded-full border border-sq-muted">
-                    <span className="text-sq-muted text-sm">{profile.full_name}</span>
+                    <input value={editName} onChange={e => setEditName(e.target.value)}
+                    className="bg-transparent outline-none text-white text-sm w-full"/>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1">
                   <span className="text-white text-sm font-semibold">Email</span>
                   <div className="flex items-center h-11 px-4 rounded-full border border-sq-muted">
-                    <span className="text-sq-muted text-sm">{profile.email}</span>
+                    <input value={editEmail} onChange={e => setEditEmail(e.target.value)}
+                    className="bg-transparent outline-none text-white text-sm w-full"/>
                   </div>
                 </div>
 
@@ -142,6 +157,11 @@ export default function ProfileModal({ onClose }: Props) {
                   <span className="text-white text-sm font-semibold">Tier</span>
                   <span className="text-white/70 text-sm">{ROLE_LABELS[profile.role] ?? profile.role}</span>
                 </div>
+
+                <button onClick={handleSave} className="self-center w-25 px-4 py-1.5 bg-sq-accent text-white text-sm font-semibold rounded-full hover:opacity-90 transition-opacity">
+                  Save
+                </button>
+
 
               </div>
             </div>
