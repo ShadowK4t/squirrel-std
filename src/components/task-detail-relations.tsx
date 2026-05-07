@@ -14,7 +14,7 @@ type Props = {
 
 export default function TaskDetailRelations({ taskId, task, editing, onRefresh }: Props) {
   const [linkedTasks, setLinkedTasks] = useState<LinkedTask[]>([])
-  const [allTasks, setAllTasks]       = useState<{ id: string; title: string }[]>([])
+  const [allTasks, setAllTasks] = useState<{ id: string; title: string }[]>([])
 
   const supabase = createClient()
 
@@ -69,8 +69,7 @@ export default function TaskDetailRelations({ taskId, task, editing, onRefresh }
                 <div className="flex items-center gap-2 shrink-0">
                   <span
                     className="text-xs font-medium px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: t.status.color + '33', color: t.status.color }}
-                  >
+                    style={{ backgroundColor: t.status.color + '33', color: t.status.color }}>
                     {t.status.label}
                   </span>
                   {editing && (
@@ -88,8 +87,7 @@ export default function TaskDetailRelations({ taskId, task, editing, onRefresh }
             <select
               defaultValue=""
               onChange={e => { addLinkedTask(e.target.value); e.target.value = '' }}
-              className="flex-1 bg-sq-col border border-sq-muted rounded text-white text-sm px-2 py-1.5 outline-none"
-            >
+              className="flex-1 bg-sq-col border border-sq-muted rounded text-white text-sm px-2 py-1.5 outline-none">
               <option value="" disabled>Add blocking task...</option>
               {allTasks
                 .filter(t => !task.related_task_ids.includes(t.id))

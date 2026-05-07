@@ -3,7 +3,7 @@ export type User       = { id: string; full_name: string }
 export type Team       = { id: string; name: string; color: string }
 export type Subtask    = { id: string; title: string; is_done: boolean; position: number }
 export type LinkedTask = { id: string; title: string; status: { label: string; color: string } }
-export type Comment    = { id: string; user_id: string; content: string; created_at: string; user: { full_name: string } }
+export type Comment    = { id: string; user_id: string; parent_id: string | null; content: string; created_at: string; user: { full_name: string } }
 export type Attachment = { id: string; url: string; file_name: string; type: string }
 
 export type TaskDetail = {
@@ -28,7 +28,7 @@ export type TaskDetail = {
   subtasks: Subtask[]
   comments: Comment[]
   related_task_ids: string[]
-  task_boards: { board: { name: string; color: string } }[]
+  task_boards: { board_id: string; board: { name: string; color: string } }[]
   task_teams: { is_responsible: boolean; team: { id: string; name: string; color: string } }[]
 }
 

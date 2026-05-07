@@ -32,6 +32,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   const [users, setUsers]         = useState<User[]>([])
   const [teams, setTeams]         = useState<Team[]>([])
   const [stories, setStories]     = useState<{ id: string; title: string }[]>([])
+  const [boards, setBoards]       = useState<{ id: string; name: string; team_id: string }[]>([])
   const [loading, setLoading]     = useState(true)
   const [editing, setEditing]     = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -51,8 +52,8 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
         reviewer_user:users!reviewer_id(full_name),
         creator_user:users!created_by(full_name),
         subtasks(id, title, is_done, position),
-        comments(id, user_id, content, created_at, user:users!user_id(full_name)),
-        task_boards(board:boards(name, color)),
+        comments(id, user_id, parent_id, content, created_at, user:users!user_id(full_name)),
+        task_boards(board_id, board:boards(name, color)),
         task_teams(is_responsible, team:teams(id, name, color))
       `)
       .eq('id', taskId)
@@ -72,6 +73,8 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
       .then(({ data }) => { if (data) setTeams(data) })
     supabase.from('tasks').select('id, title').eq('type', 'story').neq('id', taskId).order('title')
       .then(({ data }) => { if (data) setStories(data) })
+    supabase.from('boards').select('id, name, team_id').order('name')
+      .then(({ data }) => { if (data) setBoards(data) })
   }, [taskId])
 
   function startEditing() {
@@ -103,6 +106,15 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
     await supabase.from('task_teams').delete().eq('task_id', taskId).eq('is_responsible', true)
     if (teamId) {
       await supabase.from('task_teams').insert({ task_id: taskId, team_id: teamId, is_responsible: true })
+    }
+    fetchTask()
+    onUpdated()
+  }
+
+  async function updateBoard(boardId: string) {
+    await supabase.from('task_boards').delete().eq('task_id', taskId)
+    if (boardId) {
+      await supabase.from('task_boards').insert({ task_id: taskId, board_id: boardId })
     }
     fetchTask()
     onUpdated()
@@ -315,6 +327,23 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
                       {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                   : <span className="text-white text-sm">{responsibleTeam?.name}</span>
+                }
+              </div>
+            )}
+
+            {/* Board */}
+            {(editing || task.task_boards.length > 0) && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Board</label>
+                {editing
+                  ? <select
+                      value={task.task_boards[0]?.board_id ?? ''}
+                      onChange={e => updateBoard(e.target.value)}
+                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
+                      <option value="">None</option>
+                      {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  : <span className="text-white text-sm">{task.task_boards[0]?.board.name}</span>
                 }
               </div>
             )}

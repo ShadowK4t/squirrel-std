@@ -45,7 +45,6 @@ const PRIORITY_LABELS: Record<number, string> = {
 function timeElapsed(startDate: string | null): string {
   if (!startDate) return ''
   const days = Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000)
-  if (days <= 0) return `${days} days`
   const weeks = Math.floor(days / 7)
   const rem = days % 7
   if (weeks === 0) return `${days} day${days !== 1 ? 's' : ''}`
@@ -80,8 +79,9 @@ export default function BoardPage() {
   const [showFilter, setShowFilter]               = useState(false)
   const [filterPriorities, setFilterPriorities]   = useState<Set<number>>(new Set())
   const [filterBoards, setFilterBoards]           = useState<Set<string>>(new Set())
-  const [filterTypes, setFilterTypes]             = useState<Set<string>>(new Set())
   const [filterUsers, setFilterUsers]             = useState<Set<string>>(new Set())
+  const [showFuture, setShowFuture]               = useState(false)
+  const [showCreateMenu, setShowCreateMenu]       = useState(false)
   const filterRef = useRef<HTMLDivElement>(null)
 
   async function fetchTasks() {
@@ -133,10 +133,6 @@ export default function BoardPage() {
     setFilterBoards(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
   }
 
-  function toggleType(type: string) {
-    setFilterTypes(prev => { const n = new Set(prev); n.has(type) ? n.delete(type) : n.add(type); return n })
-  }
-
   function toggleUserFilter(userId: string) {
     setFilterUsers(prev => {
       const next = new Set(prev)
@@ -148,16 +144,17 @@ export default function BoardPage() {
   function clearFilters() {
     setFilterPriorities(new Set())
     setFilterBoards(new Set())
-    setFilterTypes(new Set())
     setSearch('')
     if (currentUserId) setFilterUsers(new Set([currentUserId]))
   }
 
   const allBoards = Array.from(new Set(tasks.flatMap(t => t.task_boards.map(tb => tb.board.name))))
 
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+
   const filteredTasks = tasks.filter(task => {
     if (task.type === 'story') return false
-    if (filterTypes.size > 0 && !filterTypes.has(task.type)) return false
+    if (!showFuture && task.start_date && new Date(task.start_date) > today) return false
     if (filterUsers.size > 0 && (!task.assignee || !filterUsers.has(task.assignee))) return false
     if (search && !task.title.toLowerCase().includes(search.toLowerCase()) &&
         !task.description?.toLowerCase().includes(search.toLowerCase())) return false
@@ -167,7 +164,7 @@ export default function BoardPage() {
   })
 
   const storyTitleMap = Object.fromEntries(tasks.filter(t => t.type === 'story').map(t => [t.id, t.title]))
-  const hasActiveFilters = filterPriorities.size > 0 || filterBoards.size > 0 || filterTypes.size > 0
+  const hasActiveFilters = filterPriorities.size > 0 || filterBoards.size > 0
   const requestStatus    = statuses.find(s => s.label === 'Request')
   const visibleStatuses  = statuses.filter(s => s.label !== 'Request' && s.label !== 'Done')
 
@@ -219,27 +216,13 @@ export default function BoardPage() {
             <span className="text-sm">Filter</span>
             {hasActiveFilters && (
               <span className="bg-sq-accent text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
-                {filterPriorities.size + filterBoards.size + filterTypes.size}
+                {filterPriorities.size + filterBoards.size}
               </span>
             )}
           </button>
 
           {showFilter && (
             <div className="absolute top-10 left-0 z-40 bg-sq-col border border-sq-muted rounded-xl p-4 w-64 flex flex-col gap-4 shadow-xl">
-              <div className="flex flex-col gap-2">
-                <span className="text-white text-sm font-semibold">Type</span>
-                <div className="flex flex-col gap-1">
-                  {(['task'] as const).map(type => {
-                    const active = filterTypes.has(type)
-                    return (
-                      <button key={type} onClick={() => toggleType(type)}
-                        className={`flex items-center gap-2 px-2 py-1 rounded text-sm text-left capitalize transition-colors ${active ? 'bg-sq-accent text-white' : 'text-sq-nav-inactive hover:text-white'}`}>
-                        {type}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
               <div className="flex flex-col gap-2">
                 <span className="text-white text-sm font-semibold">Priority</span>
                 <div className="flex flex-col gap-1">
@@ -281,12 +264,38 @@ export default function BoardPage() {
         </div>
 
         <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-sq-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity ml-auto"
+          onClick={() => setShowFuture(prev => !prev)}
+          className={`flex items-center gap-2 text-sm transition-colors ${showFuture ? 'text-sq-accent' : 'text-sq-nav-inactive hover:text-white'}`}
         >
-          <IconPlus size={16} />
-          Create
+          <IconClock size={16} />
+          Future
         </button>
+
+        <div
+          className="relative ml-auto"
+          onMouseEnter={() => setShowCreateMenu(true)}
+          onMouseLeave={() => setShowCreateMenu(false)}
+        >
+          <button className="flex items-center gap-2 bg-sq-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity">
+            <IconPlus size={16} />
+            Create
+          </button>
+          {showCreateMenu && (
+            <div className="absolute right-0 top-full pt-1 z-40">
+              <div className="bg-sq-col border border-sq-muted rounded-xl overflow-hidden shadow-xl w-44">
+                <button onClick={() => {}} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                  Add Request
+                </button>
+                <button onClick={() => { setShowModal(true); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                  Add Task
+                </button>
+                <button onClick={() => {}} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                  Add Column
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* KANBAN COLUMNS — fixed width */}

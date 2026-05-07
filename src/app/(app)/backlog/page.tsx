@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   IconChevronRight, IconClipboard, IconSubtask, IconBooks, IconPlus,
-  IconSearch, IconAdjustmentsHorizontal, IconX, IconEye, IconEyeOff,
+  IconSearch, IconAdjustmentsHorizontal, IconX, IconEye, IconEyeOff, IconClock,
 } from '@tabler/icons-react'
 import TaskDetailModal from '@/components/task-detail-modal'
 import TaskModal from '@/components/task-modal'
@@ -20,6 +20,7 @@ const HIDDEN_TEAMS_KEY      = 'backlog_hidden_teams'
 const FILTER_PRIORITIES_KEY = 'backlog_filter_priorities'
 const FILTER_STATUSES_KEY   = 'backlog_filter_statuses'
 const SHOW_DONE_KEY         = 'backlog_show_done'
+const SHOW_FUTURE_KEY       = 'backlog_show_future'
 
 type Status = { id: string; label: string; color: string }
 type Task = {
@@ -67,6 +68,13 @@ export default function BacklogPage() {
       return stored ? JSON.parse(stored) : false
     } catch { return false }
   })
+  const [showFuture, setShowFuture] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true
+    try {
+      const stored = localStorage.getItem(SHOW_FUTURE_KEY)
+      return stored !== null ? JSON.parse(stored) : true
+    } catch { return true }
+  })
   const [showFilter, setShowFilter]             = useState(false)
   const filterRef = useRef<HTMLDivElement>(null)
 
@@ -79,11 +87,15 @@ export default function BacklogPage() {
     } catch { return new Set() }
   })
   const [showTeamPicker, setShowTeamPicker] = useState(false)
+  const [showCreateMenu, setShowCreateMenu] = useState(false)
   const teamPickerRef = useRef<HTMLDivElement>(null)
 
-  const [openStories, setOpenStories]   = useState<Set<string>>(new Set())
+  const [openStories, setOpenStories]       = useState<Set<string>>(new Set())
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const [modalConfig, setModalConfig]   = useState<{ type: 'story' | 'task'; parentId?: string } | null>(null)
+  const [modalConfig, setModalConfig]       = useState<{ type: 'story' | 'task'; parentId?: string } | null>(null)
+  const [dragTaskId, setDragTaskId]           = useState<string | null>(null)
+  const [dragOverStoryId, setDragOverStoryId] = useState<string | null>(null)
+  const [dragOverBoardId, setDragOverBoardId] = useState<string | null>(null)
 
   async function fetchData() {
     const supabase = createClient()
@@ -152,6 +164,34 @@ export default function BacklogPage() {
     })
   }
 
+  function toggleShowFuture() {
+    setShowFuture(prev => {
+      const next = !prev
+      localStorage.setItem(SHOW_FUTURE_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  async function handleDropOnStory(storyId: string) {
+    if (!dragTaskId) return
+    const supabase = createClient()
+    await supabase.from('tasks').update({ parent_id: storyId }).eq('id', dragTaskId)
+    setDragTaskId(null)
+    setDragOverStoryId(null)
+    setDragOverBoardId(null)
+    fetchData()
+  }
+
+  async function handleDropOnBoard() {
+    if (!dragTaskId) return
+    const supabase = createClient()
+    await supabase.from('tasks').update({ parent_id: null }).eq('id', dragTaskId)
+    setDragTaskId(null)
+    setDragOverStoryId(null)
+    setDragOverBoardId(null)
+    fetchData()
+  }
+
   function clearFilters() {
     setFilterPriorities(new Set())
     setFilterStatuses(new Set())
@@ -165,8 +205,11 @@ export default function BacklogPage() {
   const statusMap = Object.fromEntries(statuses.map(s => [s.id, s]))
   const hasActiveFilters = filterPriorities.size > 0 || filterStatuses.size > 0
 
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+
   function matchesFilters(t: Task) {
     if (!showDone && statusMap[t.status_id]?.label === 'Done') return false
+    if (!showFuture && t.start_date && new Date(t.start_date) > today) return false
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
     if (filterPriorities.size > 0 && !filterPriorities.has(t.priority)) return false
     if (filterStatuses.size > 0 && !filterStatuses.has(t.status_id)) return false
@@ -270,6 +313,15 @@ export default function BacklogPage() {
           )}
         </div>
 
+        {/* Future toggle */}
+        <button
+          onClick={toggleShowFuture}
+          className={`flex items-center gap-2 text-sm transition-colors ${showFuture ? 'text-sq-accent' : 'text-sq-nav-inactive hover:text-white'}`}
+        >
+          <IconClock size={18} />
+          Future
+        </button>
+
         {/* Teams visibility */}
         <div className="relative" ref={teamPickerRef}>
           <button
@@ -303,13 +355,32 @@ export default function BacklogPage() {
           )}
         </div>
 
-        <button
-          onClick={() => setModalConfig({ type: 'story' })}
-          className="flex items-center gap-2 bg-sq-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity ml-auto"
+        <div
+          className="relative ml-auto"
+          onMouseEnter={() => setShowCreateMenu(true)}
+          onMouseLeave={() => setShowCreateMenu(false)}
         >
-          <IconPlus size={16} />
-          Create
-        </button>
+          <button className="flex items-center gap-2 bg-sq-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity">
+            <IconPlus size={16} />
+            Create
+          </button>
+          {showCreateMenu && (
+            <div className="absolute right-0 top-full pt-1 z-40">
+              <div className="bg-sq-col border border-sq-muted rounded-xl overflow-hidden shadow-xl w-44">
+                <button onClick={() => {}} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                  Add Request
+                </button>
+                <button onClick={() => { setModalConfig({ type: 'task' }); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                  Add Task
+                </button>
+                <button onClick={() => {}} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                  Add Table
+                </button>
+
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Teams */}
@@ -365,7 +436,12 @@ export default function BacklogPage() {
                     <span className="text-white/40 text-xs font-medium text-center">Sub</span>
                   </div>
 
-                  <div className="flex flex-col divide-y divide-sq-col/40 bg-sq-card">
+                  <div
+                    className={`flex flex-col divide-y divide-sq-col/40 bg-sq-card transition-colors ${dragTaskId && dragOverBoardId === board.id && !dragOverStoryId ? 'ring-1 ring-inset ring-sq-accent/30' : ''}`}
+                    onDragOver={e => { e.preventDefault(); if (dragTaskId) setDragOverBoardId(board.id) }}
+                    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverBoardId(null) }}
+                    onDrop={() => handleDropOnBoard()}
+                  >
 
                     {filteredStories.map(story => {
                       const allChildren     = childMap[story.id] ?? []
@@ -375,10 +451,15 @@ export default function BacklogPage() {
                       return (
                         <div key={story.id}>
                           <div
-                            className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center cursor-pointer group"
-                            onClick={() => allChildren.length > 0 ? toggleStory(story.id) : setSelectedTaskId(story.id)}
+                            className={`grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 transition-colors items-center group ${dragTaskId && dragOverStoryId === story.id ? 'bg-sq-accent/10 ring-1 ring-inset ring-sq-accent/30' : 'hover:bg-sq-col/40'}`}
+                            onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (dragTaskId) setDragOverStoryId(story.id) }}
+                            onDragLeave={() => setDragOverStoryId(null)}
+                            onDrop={e => { e.stopPropagation(); handleDropOnStory(story.id) }}
                           >
-                            <div className="flex items-center justify-center">
+                            <div
+                              className="flex items-center justify-center cursor-pointer"
+                              onClick={() => allChildren.length > 0 ? toggleStory(story.id) : setSelectedTaskId(story.id)}
+                            >
                               {allChildren.length > 0
                                 ? <IconChevronRight size={14} className="text-white/40 transition-transform"
                                     style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
@@ -388,8 +469,8 @@ export default function BacklogPage() {
                             <div className="flex items-center gap-2 min-w-0">
                               {allChildren.length > 0 && <IconBooks size={14} className="text-sq-accent shrink-0" />}
                               <span
-                                className="text-white text-sm font-semibold truncate hover:underline"
-                                onClick={e => { e.stopPropagation(); setSelectedTaskId(story.id) }}
+                                className="text-white text-sm font-semibold truncate hover:underline cursor-pointer"
+                                onClick={() => setSelectedTaskId(story.id)}
                               >
                                 {story.title}
                               </span>
@@ -408,12 +489,22 @@ export default function BacklogPage() {
                           </div>
 
                           {isOpen && visibleChildren.map(child => (
-                            <div key={child.id} onClick={() => setSelectedTaskId(child.id)}
-                              className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2 hover:bg-sq-col/40 transition-colors items-center cursor-pointer bg-sq-col/20">
+                            <div
+                              key={child.id}
+                              draggable
+                              onDragStart={() => { setDragTaskId(child.id); setDragOverStoryId(null) }}
+                              onDragEnd={() => { setDragTaskId(null); setDragOverStoryId(null) }}
+                              className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2 hover:bg-sq-col/40 transition-colors items-center cursor-grab active:cursor-grabbing bg-sq-col/20"
+                            >
                               <span />
                               <div className="flex items-center gap-2 min-w-0 pl-5">
                                 <IconClipboard size={13} className="text-sq-task-icon shrink-0" />
-                                <span className="text-white text-xs truncate">{child.title}</span>
+                                <span
+                                  className="text-white text-xs truncate hover:underline cursor-pointer"
+                                  onClick={() => setSelectedTaskId(child.id)}
+                                >
+                                  {child.title}
+                                </span>
                               </div>
                               <StatusBadge status={statusMap[child.status_id]} />
                               <span className="text-white text-xs">{timeElapsed(child.start_date)}</span>
@@ -430,12 +521,22 @@ export default function BacklogPage() {
                     })}
 
                     {filteredOrphans.map(task => (
-                      <div key={task.id} onClick={() => setSelectedTaskId(task.id)}
-                        className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center cursor-pointer">
+                      <div
+                        key={task.id}
+                        draggable
+                        onDragStart={() => { setDragTaskId(task.id); setDragOverStoryId(null) }}
+                        onDragEnd={() => { setDragTaskId(null); setDragOverStoryId(null) }}
+                        className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center cursor-grab active:cursor-grabbing"
+                      >
                         <div className="flex items-center justify-center">
                           <IconClipboard size={14} className="text-sq-task-icon" />
                         </div>
-                        <span className="text-white text-sm truncate">{task.title}</span>
+                        <span
+                          className="text-white text-sm truncate hover:underline cursor-pointer"
+                          onClick={() => setSelectedTaskId(task.id)}
+                        >
+                          {task.title}
+                        </span>
                         <StatusBadge status={statusMap[task.status_id]} />
                         <span className="text-white text-xs">{timeElapsed(task.start_date)}</span>
                         <PriorityBadge priority={task.priority} />

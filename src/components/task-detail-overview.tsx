@@ -30,22 +30,29 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
   }, [taskId])
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const path = `${taskId}/${Date.now()}_${file.name}`
-    const { error } = await supabase.storage.from('task-images').upload(path, file)
-    if (error) return
-    const { data: { publicUrl } } = supabase.storage.from('task-images').getPublicUrl(path)
-    const { data: att } = await supabase.from('task_attachments').insert({
-      task_id: taskId,
-      url: publicUrl,
-      file_name: file.name,
-      type: 'image',
-      uploaded_by: user.id,
-    }).select('id, url, file_name, type').single()
-    if (att) setAttachments(prev => [...prev, att as Attachment])
+    const slots = 5 - attachments.length
+    const toUpload = files.slice(0, slots)
+    const added: Attachment[] = []
+    for (const file of toUpload) {
+      const path = `${taskId}/${Date.now()}_${file.name}`
+      const { error } = await supabase.storage.from('task-images').upload(path, file)
+      if (error) continue
+      const { data: { publicUrl } } = supabase.storage.from('task-images').getPublicUrl(path)
+      const { data: att } = await supabase.from('task_attachments').insert({
+        task_id: taskId,
+        url: publicUrl,
+        file_name: file.name,
+        type: 'image',
+        uploaded_by: user.id,
+      }).select('id, url, file_name, type').single()
+      if (att) added.push(att as Attachment)
+    }
+    if (added.length) setAttachments(prev => [...prev, ...added])
+    e.target.value = ''
   }
 
   async function handleDeleteAttachment(id: string, url: string) {
@@ -121,7 +128,7 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
         )}
         {editing && attachments.length < 5 && (
           <>
-            <input id="file-upload" type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+            <input id="file-upload" type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
             <label htmlFor="file-upload" className="flex items-center gap-1.5 text-sq-muted hover:text-white text-xs cursor-pointer transition-colors w-fit">
               <IconPlus size={14} /> Upload image ({5 - attachments.length} remaining)
             </label>

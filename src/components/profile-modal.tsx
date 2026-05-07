@@ -64,25 +64,21 @@ export default function ProfileModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 transition-opacity duration-250"
         style={{ opacity: visible ? 1 : 0 }}
-        onClick={handleClose}
-      />
+        onClick={handleClose}/>
 
       {/* Side panel */}
       <div
         className="relative w-172.5 h-full bg-sq-col rounded-l-xl flex flex-col overflow-y-auto transition-transform duration-250"
-        style={{ transform: visible ? 'translateX(0)' : 'translateX(100%)' }}
-      >
+        style={{ transform: visible ? 'translateX(0)' : 'translateX(100%)' }}>
 
         {/* Close */}
         <button
           onClick={handleClose}
-          className="absolute top-4 right-4 text-sq-muted hover:text-white transition-colors z-10"
-        >
+          className="absolute top-4 right-4 text-sq-muted hover:text-white transition-colors z-10">
           <IconX size={22} />
         </button>
 
@@ -161,8 +157,6 @@ export default function ProfileModal({ onClose }: Props) {
                 <button onClick={handleSave} className="self-center w-25 px-4 py-1.5 bg-sq-accent text-white text-sm font-semibold rounded-full hover:opacity-90 transition-opacity">
                   Save
                 </button>
-
-
               </div>
             </div>
 
