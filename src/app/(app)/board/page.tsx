@@ -155,6 +155,7 @@ export default function BoardPage() {
   const allBoards = Array.from(new Set(tasks.flatMap(t => t.task_boards.map(tb => tb.board.name))))
 
   const filteredTasks = tasks.filter(task => {
+    if (task.type === 'story') return false
     if (filterTypes.size > 0 && !filterTypes.has(task.type)) return false
     if (filterUsers.size > 0 && (!task.assignee || !filterUsers.has(task.assignee))) return false
     if (search && !task.title.toLowerCase().includes(search.toLowerCase()) &&
@@ -227,7 +228,7 @@ export default function BoardPage() {
               <div className="flex flex-col gap-2">
                 <span className="text-white text-sm font-semibold">Type</span>
                 <div className="flex flex-col gap-1">
-                  {(['task', 'story'] as const).map(type => {
+                  {(['task'] as const).map(type => {
                     const active = filterTypes.has(type)
                     return (
                       <button key={type} onClick={() => toggleType(type)}

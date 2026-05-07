@@ -101,6 +101,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
   // Edit mode state
   const [editTitle, setEditTitle]             = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [newSubtask, setNewSubtask]           = useState('')
 
   const supabase = createClient()
 
@@ -293,6 +294,14 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
     if (att) setAttachments(prev => [...prev, att as Attachment])
   }
 
+  async function handleAddSubtask() {
+    if (!newSubtask.trim()) return
+    const position = task?.subtasks.length ?? 0
+    await supabase.from('subtasks').insert({ task_id: taskId, title: newSubtask.trim(), is_done: false, position })
+    setNewSubtask('')
+    fetchTask()
+  }
+
   async function handleDeleteAttachment(id: string, url: string) {
     const path = url.split('/task-images/')[1]
     await supabase.storage.from('task-images').remove([path])
@@ -361,8 +370,8 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               ? <button onClick={saveEdit} className="text-sq-accent hover:text-white transition-colors">
                   <IconDeviceFloppy size={20} />
                 </button>
-              : <button onClick={startEditing} className="text-sq-muted hover:text-white transition-colors">
-                  <IconPencil size={18} />
+              : <button onClick={startEditing} className="bg-sq-accent text-sq-col px-2 py-1 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-1.5 text-xs font-semibold">
+                  <IconPencil size={13} /> Edit
                 </button>
             }
             {confirmDelete
@@ -409,9 +418,11 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
 
             {/* Attachments */}
             <div className="flex flex-col gap-2">
-              <label className="text-white font-semibold text-base">Attachments</label>
+              <div className="flex items-center justify-between">
+                <label className="text-white font-semibold text-base">Attachments</label>
+                <span className="text-sq-muted text-xs">{attachments.length}/5</span>
+              </div>
 
-              {/* Thumbnails */}
               {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {attachments.map(a => (
@@ -435,8 +446,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
                 </div>
               )}
 
-              {/* Upload - edit mode*/}
-              {editing && (
+              {editing && attachments.length < 5 && (
                 <>
                   <input
                     id="file-upload"
@@ -446,18 +456,21 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
                     className="hidden"
                   />
                   <label htmlFor="file-upload" className="flex items-center gap-1.5 text-sq-muted hover:text-white text-xs cursor-pointer transition-colors w-fit">
-                    <IconPlus size={14} /> Upload image
+                    <IconPlus size={14} /> Upload image ({5 - attachments.length} remaining)
                   </label>
                 </>
               )}
+              {editing && attachments.length >= 5 && (
+                <span className="text-sq-muted text-xs italic">Maximum 5 images reached</span>
+              )}
             </div>
 
-            {/* Subtasks */}
-            <div className="flex flex-col gap-2">
+            {/* Subtasks - tasks only */}
+            {task.type !== 'story' && (<div className="flex flex-col gap-2">
               <label className="text-white font-semibold text-base">
                 Subtasks ({task.subtasks.filter(s => s.is_done).length}/{task.subtasks.length})
               </label>
-              {task.subtasks.length === 0
+              {task.subtasks.length === 0 && !editing
                 ? <span className="text-sq-muted text-xs italic">No subtasks</span>
                 : (
                   <div className="flex flex-col gap-1">
@@ -480,7 +493,22 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
                   </div>
                 )
               }
-            </div>
+              {editing && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newSubtask}
+                    onChange={e => setNewSubtask(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddSubtask()}
+                    placeholder="New subtask..."
+                    className="flex-1 bg-sq-col border border-sq-muted rounded text-white text-sm px-3 py-1.5 outline-none placeholder:text-sq-muted"
+                  />
+                  <button onClick={handleAddSubtask} className="flex items-center gap-1 text-sq-muted hover:text-white text-xs transition-colors">
+                    <IconPlus size={14} /> Add
+                  </button>
+                </div>
+              )}
+            </div>)}
 
             {/* Linked Tasks */}
             <div className="flex flex-col gap-2">
@@ -648,121 +676,111 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
             </div>
           </div>
 
-          {/* RIGHT — sidebar */}
+          {/* RIGHT - sidebar */}
           <div className="w-56 bg-sq-col p-4 flex flex-col gap-4 shrink-0 overflow-y-auto">
 
             {/* Assignee */}
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Assignee</label>
-              {editing
-                ? <select
-                    value={task.assignee ?? ''}
-                    onChange={e => updateField('assignee', e.target.value)}
-                    className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none"
-                  >
-                    <option value="">None</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                  </select>
-                : <span className="text-white text-sm">{task.assignee_user?.full_name ?? '—'}</span>
-              }
-            </div>
+            {(editing || task.assignee_user) && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Assignee</label>
+                {editing
+                  ? <select value={task.assignee ?? ''} onChange={e => updateField('assignee', e.target.value)}
+                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
+                      <option value="">None</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                    </select>
+                  : <span className="text-white text-sm">{task.assignee_user?.full_name}</span>
+                }
+              </div>
+            )}
 
             {/* Priority */}
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Priority</label>
-              {editing
-                ? <select
-                    value={task.priority}
-                    onChange={e => updateField('priority', Number(e.target.value))}
-                    className="bg-sq-card border border-sq-muted rounded text-xs px-2 py-1.5 outline-none font-medium"
-                    style={{ color: PRIORITY_COLORS[task.priority] }}
-                  >
-                    {Object.entries(PRIORITY_LABELS).map(([val, label]) => (
-                      <option key={val} value={val}>{label}</option>
-                    ))}
-                  </select>
-                : <span className="text-sm font-medium" style={{ color: PRIORITY_COLORS[task.priority] }}>
-                    {PRIORITY_LABELS[task.priority]}
-                  </span>
-              }
-            </div>
+            {(editing || task.priority !== 0) && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Priority</label>
+                {editing
+                  ? <select value={task.priority} onChange={e => updateField('priority', Number(e.target.value))}
+                      className="bg-sq-card border border-sq-muted rounded text-xs px-2 py-1.5 outline-none font-medium"
+                      style={{ color: PRIORITY_COLORS[task.priority] }}>
+                      {Object.entries(PRIORITY_LABELS).map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
+                    </select>
+                  : <span className="text-sm font-medium" style={{ color: PRIORITY_COLORS[task.priority] }}>
+                      {PRIORITY_LABELS[task.priority]}
+                    </span>
+                }
+              </div>
+            )}
 
-            {/* Reviewer */}
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Reviewer</label>
-              {editing
-                ? <select
-                    value={task.reviewer_id ?? ''}
-                    onChange={e => updateField('reviewer_id', e.target.value)}
-                    className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none"
-                  >
-                    <option value="">None</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                  </select>
-                : <span className="text-white text-sm">{task.reviewer_user?.full_name ?? '—'}</span>
-              }
-            </div>
+            {/* Reviewer - tasks only */}
+            {task.type !== 'story' && (editing || task.reviewer_user) && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Reviewer</label>
+                {editing
+                  ? <select value={task.reviewer_id ?? ''} onChange={e => updateField('reviewer_id', e.target.value)}
+                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
+                      <option value="">None</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                    </select>
+                  : <span className="text-white text-sm">{task.reviewer_user?.full_name}</span>
+                }
+              </div>
+            )}
 
             {/* Period */}
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Period</label>
-              {editing
-                ? <input
-                    type="date"
-                    value={task.start_date ?? ''}
-                    onChange={e => updateField('start_date', e.target.value)}
-                    className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none"
-                  />
-                : <span className="text-white text-sm">{getElapsed(task.start_date)}</span>
-              }
-            </div>
+            {(editing || task.start_date) && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Period</label>
+                {editing
+                  ? <input type="date" value={task.start_date ?? ''} onChange={e => updateField('start_date', e.target.value)}
+                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none" />
+                  : <span className="text-white text-sm">{getElapsed(task.start_date)}</span>
+                }
+              </div>
+            )}
 
-            {/* Story — only for tasks */}
-            {task.type === 'task' && (
+            {/* Story - only for tasks */}
+            {task.type === 'task' && (editing || task.parent_id) && (
               <div className="flex flex-col gap-1">
                 <label className="text-white text-sm font-medium">Story</label>
                 {editing
-                  ? <select
-                      value={task.parent_id ?? ''}
-                      onChange={e => updateField('parent_id', e.target.value)}
-                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none"
-                    >
+                  ? <select value={task.parent_id ?? ''} onChange={e => updateField('parent_id', e.target.value)}
+                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
                       <option value="">None</option>
                       {stories.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
                     </select>
-                  : <span className="text-white text-sm">{task.parent?.title ?? '—'}</span>
+                  : <span className="text-white text-sm">{task.parent?.title}</span>
                 }
               </div>
             )}
 
             {/* Team */}
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Team</label>
-              {editing
-                ? <select
-                    value={responsibleTeamId}
-                    onChange={e => updateTeam(e.target.value)}
-                    className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none"
-                  >
-                    <option value="">None</option>
-                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                : <span className="text-white text-sm">{responsibleTeam?.name ?? '—'}</span>
-              }
-            </div>
+            {(editing || responsibleTeam) && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Team</label>
+                {editing
+                  ? <select value={responsibleTeamId} onChange={e => updateTeam(e.target.value)}
+                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
+                      <option value="">None</option>
+                      {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  : <span className="text-white text-sm">{responsibleTeam?.name}</span>
+                }
+              </div>
+            )}
 
-            {/* Team Related — read-only always */}
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Team Related</label>
-              {relatedTeams.length > 0
-                ? <div className="flex flex-col gap-1">
-                    {relatedTeams.map(t => (
-                      <span key={t.team.id} className="text-white text-sm">{t.team.name}</span>
-                    ))}
-                  </div>
-                : <span className="text-sq-muted text-xs italic">None</span>
-              }
-            </div>
+            {/* Team Related */}
+            {relatedTeams.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Team Related</label>
+                <div className="flex flex-col gap-1">
+                  {relatedTeams.map(t => (
+                    <span key={t.team.id} className="text-white text-sm">{t.team.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Version */}
             <div className="flex flex-col gap-1">
@@ -771,10 +789,12 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
             </div>
 
             {/* Creator */}
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Creator</label>
-              <span className="text-white text-sm">{task.creator_user?.full_name ?? '—'}</span>
-            </div>
+            {task.creator_user && (
+              <div className="flex flex-col gap-1">
+                <label className="text-white text-sm font-medium">Creator</label>
+                <span className="text-white text-sm">{task.creator_user.full_name}</span>
+              </div>
+            )}
 
           </div>
         </div>

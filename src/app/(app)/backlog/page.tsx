@@ -250,7 +250,7 @@ export default function BacklogPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <span className="text-white text-sm font-semibold">Status</span>
-                {statuses.filter(s => s.label !== 'Request').map(s => {
+                {statuses.filter(s => s.label !== 'Request' && s.label !== 'Done').map(s => {
                   const active = filterStatuses.has(s.id)
                   return (
                     <button key={s.id} onClick={() => toggleStatus(s.id)}
