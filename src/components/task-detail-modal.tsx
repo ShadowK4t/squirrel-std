@@ -370,8 +370,8 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               ? <button onClick={saveEdit} className="text-sq-accent hover:text-white transition-colors">
                   <IconDeviceFloppy size={20} />
                 </button>
-              : <button onClick={startEditing} className="bg-sq-accent text-sq-col px-2 py-1 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-1.5 text-xs font-semibold">
-                  <IconPencil size={13} /> Edit
+              : <button onClick={startEditing} className="bg-sq-accent text-sq-col px-1.5 py-1.5 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-1.5 text-xs font-semibold">
+                  <IconPencil size={13} />
                 </button>
             }
             {confirmDelete
