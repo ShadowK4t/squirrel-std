@@ -1,10 +1,11 @@
 'use client'
 
-import { IconSearch, IconAdjustmentsHorizontal, IconClipboard, IconBooks, IconSubtask, IconFlame, IconMessage, IconClock, IconPlus, IconX, IconRecycle } from '@tabler/icons-react'
+import { IconSearch, IconAdjustmentsHorizontal, IconClock, IconPlus, IconX } from '@tabler/icons-react'
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import TaskModal from '@/components/task-modal'
 import TaskDetailModal from '@/components/task-detail-modal'
+import TaskCard from '@/components/task-card'
 
 type Status = {
   id: string
@@ -42,15 +43,9 @@ const PRIORITY_LABELS: Record<number, string> = {
   0: 'None', 1: 'Low', 2: 'Medium', 3: 'High', 4: 'Critical',
 }
 
-function timeElapsed(startDate: string | null): string {
-  if (!startDate) return ''
-  const days = Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000)
-  const weeks = Math.floor(days / 7)
-  const rem = days % 7
-  if (weeks === 0) return `${days} day${days !== 1 ? 's' : ''}`
-  if (rem === 0) return `${weeks} week${weeks !== 1 ? 's' : ''}`
-  return `${weeks} week${weeks !== 1 ? 's' : ''}, ${rem} day${rem !== 1 ? 's' : ''}`
-}
+const PERSONAL_COLUMNS_KEY = 'board_personal_columns'
+type PersonalColumn = { id: string; name: string; color: string; taskIds: string[] }
+
 
 function initials(name: string): string {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -82,6 +77,15 @@ export default function BoardPage() {
   const [filterUsers, setFilterUsers]             = useState<Set<string>>(new Set())
   const [showFuture, setShowFuture]               = useState(false)
   const [showCreateMenu, setShowCreateMenu]       = useState(false)
+  const [dragOverColumnId, setDragOverColumnId]   = useState<string | null>(null)
+  const [personalColumns, setPersonalColumns]     = useState<PersonalColumn[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const stored = localStorage.getItem(PERSONAL_COLUMNS_KEY)
+      const parsed: any[] = stored ? JSON.parse(stored) : []
+      return parsed.map(c => ({ ...c, color: c.color ?? '#6272a4' }))
+    } catch { return [] }
+  })
   const filterRef = useRef<HTMLDivElement>(null)
 
   async function fetchTasks() {
@@ -123,6 +127,40 @@ export default function BoardPage() {
     const supabase = createClient()
     await supabase.from('tasks').update({ status_id: statusId }).eq('id', taskId)
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status_id: statusId } : t))
+  }
+
+  function saveColumns(cols: PersonalColumn[]) {
+    localStorage.setItem(PERSONAL_COLUMNS_KEY, JSON.stringify(cols))
+    setPersonalColumns(cols)
+  }
+
+  function addPersonalColumn() {
+    saveColumns([...personalColumns, { id: crypto.randomUUID(), name: 'New Column', color: '#6272a4', taskIds: [] }])
+  }
+
+  function removePersonalColumn(colId: string) {
+    saveColumns(personalColumns.filter(c => c.id !== colId))
+  }
+
+  function renameColumn(colId: string, name: string) {
+    saveColumns(personalColumns.map(c => c.id === colId ? { ...c, name } : c))
+  }
+
+  function setColumnColor(colId: string, color: string) {
+    saveColumns(personalColumns.map(c => c.id === colId ? { ...c, color } : c))
+  }
+
+  function handleDropOnColumn(e: React.DragEvent, colId: string) {
+    e.preventDefault()
+    setDragOverColumnId(null)
+    const taskId = e.dataTransfer.getData('taskId')
+    if (!taskId) return
+    saveColumns(personalColumns.map(c => ({
+      ...c,
+      taskIds: c.id === colId
+        ? c.taskIds.includes(taskId) ? c.taskIds : [...c.taskIds, taskId]
+        : c.taskIds.filter(id => id !== taskId),
+    })))
   }
 
   function togglePriority(p: number) {
@@ -289,7 +327,7 @@ export default function BoardPage() {
                 <button onClick={() => { setShowModal(true); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
                   Add Task
                 </button>
-                <button onClick={() => {}} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                <button onClick={() => { addPersonalColumn(); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
                   Add Column
                 </button>
               </div>
@@ -310,7 +348,7 @@ export default function BoardPage() {
           return (
             <div
               key={status.id}
-              onDragOver={e => { e.preventDefault(); setDragOverStatus(status.id) }}
+              onDragOver={e => { if (!e.dataTransfer.types.includes('application/sq-task')) return; e.preventDefault(); setDragOverStatus(status.id) }}
               onDragLeave={() => setDragOverStatus(null)}
               onDrop={e => handleDrop(e, status.id)}
               className={`w-87 shrink-0 bg-sq-col rounded-xl p-4 flex flex-col gap-3 transition-all ${isOver ? 'ring-2 ring-sq-accent' : ''}`}
@@ -327,114 +365,68 @@ export default function BoardPage() {
               </div>
 
               {/* Task cards */}
-              {columnTasks.map(task => {
-                const subtaskCount = task.subtasks[0]?.count ?? 0
-                const commentCount = task.comments[0]?.count ?? 0
-                const people = [task.assignee_user, task.reviewer_user].filter(Boolean) as { full_name: string }[]
+              {columnTasks.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  storyTitleMap={storyTitleMap}
+                  requestStatusId={requestStatus?.id}
+                  onOpen={() => setSelectedTaskId(task.id)}
+                />
+              ))}
 
-                return (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={e => { e.dataTransfer.setData('taskId', task.id); e.dataTransfer.effectAllowed = 'move' }}
-                    onClick={() => setSelectedTaskId(task.id)}
-                    className="bg-sq-card rounded-xl p-3 flex flex-col gap-2.5 cursor-grab active:cursor-grabbing hover:brightness-110 transition-all"
-                  >
-                    {/* Row 1: Icon + Title + Version */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2 min-w-0">
-                        {task.type === 'story'
-                          ? <IconBooks size={20} className="text-sq-accent shrink-0 mt-0.5" />
-                          : <IconClipboard size={20} className="text-sq-accent shrink-0 mt-0.5" />
-                        }
-                        <span className="text-white font-semibold text-sm leading-tight">{task.title}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <IconRecycle size={14} className="text-sq-muted" />
-                        <span className="text-sq-muted text-xs font-semibold">Ver {task.version}</span>
-                      </div>
-                    </div>
+            </div>
+          )
+        })}
 
-                    {/* Row 2: Period */}
-                    {task.start_date && (
-                      <div className="flex items-center gap-2 pl-1">
-                        <IconClock size={15} className="text-sq-muted shrink-0" />
-                        <span className="text-white text-xs">{timeElapsed(task.start_date)}</span>
-                      </div>
-                    )}
+        {/* Personal columns */}
+        {personalColumns.map(col => {
+          const colTasks = col.taskIds.map(id => tasks.find(t => t.id === id)).filter(Boolean) as Task[]
+          const isOver   = dragOverColumnId === col.id
+          return (
+            <div
+              key={col.id}
+              onDragOver={e => { if (!e.dataTransfer.types.includes('application/sq-task')) return; e.preventDefault(); setDragOverColumnId(col.id) }}
+              onDragLeave={() => setDragOverColumnId(null)}
+              onDrop={e => handleDropOnColumn(e, col.id)}
+              className={`w-87 shrink-0 bg-sq-col rounded-xl p-4 flex flex-col gap-3 transition-all ${isOver ? 'ring-2 ring-sq-accent' : ''}`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <label className="shrink-0 cursor-pointer" title="Pick column color">
+                    <div className="w-4 h-4 rounded-full transition-opacity hover:opacity-70" style={{ backgroundColor: col.color }} />
+                    <input
+                      type="color"
+                      value={col.color}
+                      onChange={e => setColumnColor(col.id, e.target.value)}
+                      className="sr-only"
+                    />
+                  </label>
+                  <input
+                    value={col.name}
+                    onChange={e => renameColumn(col.id, e.target.value)}
+                    className="bg-transparent text-white font-semibold text-base outline-none flex-1 min-w-0"
+                  />
+                </div>
+                <button onClick={() => removePersonalColumn(col.id)} className="text-sq-muted hover:text-sq-danger transition-colors ml-2">
+                  <IconX size={14} />
+                </button>
+              </div>
 
-                    {/* Row 3: Story */}
-                    {task.type === 'task' && task.parent_id && storyTitleMap[task.parent_id] && (
-                      <div className="flex items-center gap-2 pl-1">
-                        <IconBooks size={15} className="text-sq-muted shrink-0" />
-                        <span className="text-white text-xs">{storyTitleMap[task.parent_id]}</span>
-                      </div>
-                    )}
+              {colTasks.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  storyTitleMap={storyTitleMap}
+                  requestStatusId={requestStatus?.id}
+                  onOpen={() => setSelectedTaskId(task.id)}
+                  onRemove={() => saveColumns(personalColumns.map(c => c.id === col.id ? { ...c, taskIds: c.taskIds.filter(id => id !== task.id) } : c))}
+                />
+              ))}
 
-                    {/* Row 4: Pills (teams + boards) */}
-                    {(task.task_teams.length > 0 || task.task_boards.length > 0) && (
-                      <div className="flex gap-1.5 flex-wrap">
-                        {task.task_teams.map((tt, i) => (
-                          <div key={i} className="h-6 px-3 rounded-full flex items-center bg-sq-col">
-                            <span className="text-white text-xs font-medium">{tt.team.name}</span>
-                          </div>
-                        ))}
-                        {task.task_boards.map((tb, i) => (
-                          <div key={i} className="h-6 px-3 rounded-full flex items-center" style={{ backgroundColor: tb.board.color }}>
-                            <span className="text-white text-xs font-medium">{tb.board.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Request accept/reject */}
-                    {task.status_id === requestStatus?.id && (
-                      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-                        <button className="flex-1 text-xs py-1 rounded-lg bg-sq-accent text-white font-semibold">Accept</button>
-                        <button className="flex-1 text-xs py-1 rounded-lg border border-sq-muted text-sq-muted font-semibold">Reject</button>
-                      </div>
-                    )}
-
-                    {/* Row 5: People + Actions */}
-                    <div className="flex items-center justify-between">
-                      {/* User initials circles */}
-                      <div className="flex items-center">
-                        {people.length > 0
-                          ? people.map((u, i) => (
-                              <div key={i} className="w-6 h-6 rounded-full bg-sq-accent border-2 border-sq-card -ml-1.5 first:ml-0 flex items-center justify-center">
-                                <span className="text-white text-xs font-bold leading-none">{initials(u.full_name)}</span>
-                              </div>
-                            ))
-                          : <div className="w-6 h-6 rounded-full bg-sq-nav-inactive border-2 border-sq-card" />
-                        }
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-3 text-sq-muted text-xs">
-                        <button
-                          onClick={e => { e.stopPropagation(); setSelectedTaskId(task.id) }}
-                          className="flex items-center gap-1 hover:text-white transition-colors"
-                        >
-                          <IconMessage size={14} />
-                          <span>{commentCount}</span>
-                        </button>
-                        {subtaskCount > 0 && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setSelectedTaskId(task.id) }}
-                            className="flex items-center gap-1 hover:text-white transition-colors"
-                          >
-                            <IconSubtask size={14} />
-                            <span>{subtaskCount}</span>
-                          </button>
-                        )}
-                        {task.priority >= 3 && <IconFlame size={14} className="text-sq-danger" />}
-                      </div>
-                    </div>
-
-                  </div>
-                )
-              })}
-
+              {colTasks.length === 0 && (
+                <span className="text-sq-muted text-xs italic text-center mt-2">Drop tasks here</span>
+              )}
             </div>
           )
         })}

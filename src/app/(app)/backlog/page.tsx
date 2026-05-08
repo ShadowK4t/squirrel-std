@@ -93,9 +93,9 @@ export default function BacklogPage() {
   const [openStories, setOpenStories]       = useState<Set<string>>(new Set())
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [modalConfig, setModalConfig]       = useState<{ type: 'story' | 'task'; parentId?: string } | null>(null)
-  const [dragTaskId, setDragTaskId]           = useState<string | null>(null)
-  const [dragOverStoryId, setDragOverStoryId] = useState<string | null>(null)
-  const [dragOverBoardId, setDragOverBoardId] = useState<string | null>(null)
+  const [dragTaskId, setDragTaskId]               = useState<string | null>(null)
+  const [dragOverStoryId, setDragOverStoryId]     = useState<string | null>(null)
+  const [dragOverBoardId, setDragOverBoardId]     = useState<string | null>(null)
 
   async function fetchData() {
     const supabase = createClient()
@@ -438,7 +438,7 @@ export default function BacklogPage() {
 
                   <div
                     className={`flex flex-col divide-y divide-sq-col/40 bg-sq-card transition-colors ${dragTaskId && dragOverBoardId === board.id && !dragOverStoryId ? 'ring-1 ring-inset ring-sq-accent/30' : ''}`}
-                    onDragOver={e => { e.preventDefault(); if (dragTaskId) setDragOverBoardId(board.id) }}
+                    onDragOver={e => { if (!dragTaskId) return; e.preventDefault(); setDragOverBoardId(board.id) }}
                     onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverBoardId(null) }}
                     onDrop={() => handleDropOnBoard()}
                   >
@@ -452,7 +452,7 @@ export default function BacklogPage() {
                         <div key={story.id}>
                           <div
                             className={`grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 transition-colors items-center group ${dragTaskId && dragOverStoryId === story.id ? 'bg-sq-accent/10 ring-1 ring-inset ring-sq-accent/30' : 'hover:bg-sq-col/40'}`}
-                            onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (dragTaskId) setDragOverStoryId(story.id) }}
+                            onDragOver={e => { if (!dragTaskId) return; e.preventDefault(); e.stopPropagation(); setDragOverStoryId(story.id) }}
                             onDragLeave={() => setDragOverStoryId(null)}
                             onDrop={e => { e.stopPropagation(); handleDropOnStory(story.id) }}
                           >
