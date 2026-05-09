@@ -96,6 +96,10 @@ export default function BacklogPage() {
   const [dragTaskId, setDragTaskId]               = useState<string | null>(null)
   const [dragOverStoryId, setDragOverStoryId]     = useState<string | null>(null)
   const [dragOverBoardId, setDragOverBoardId]     = useState<string | null>(null)
+  const [showAddTable, setShowAddTable]           = useState(false)
+  const [newTableName, setNewTableName]           = useState('')
+  const [newTableColor, setNewTableColor]         = useState('#6272a4')
+  const [newTableTeamId, setNewTableTeamId]       = useState('')
 
   async function fetchData() {
     const supabase = createClient()
@@ -172,6 +176,17 @@ export default function BacklogPage() {
     })
   }
 
+  async function createTable() {
+    if (!newTableName.trim() || !newTableTeamId) return
+    const supabase = createClient()
+    await supabase.from('boards').insert({ name: newTableName.trim(), color: newTableColor, team_id: newTableTeamId })
+    setShowAddTable(false)
+    setNewTableName('')
+    setNewTableColor('#6272a4')
+    setNewTableTeamId('')
+    fetchData()
+  }
+
   async function handleDropOnStory(storyId: string) {
     if (!dragTaskId) return
     const supabase = createClient()
@@ -195,11 +210,9 @@ export default function BacklogPage() {
   function clearFilters() {
     setFilterPriorities(new Set())
     setFilterStatuses(new Set())
-    setShowDone(false)
     setSearch('')
     localStorage.removeItem(FILTER_PRIORITIES_KEY)
     localStorage.removeItem(FILTER_STATUSES_KEY)
-    localStorage.setItem(SHOW_DONE_KEY, 'false')
   }
 
   const statusMap = Object.fromEntries(statuses.map(s => [s.id, s]))
@@ -208,7 +221,7 @@ export default function BacklogPage() {
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
   function matchesFilters(t: Task) {
-    if (!showDone && statusMap[t.status_id]?.label === 'Done') return false
+    if (statusMap[t.status_id]?.label === 'Done') return false
     if (!showFuture && t.start_date && new Date(t.start_date) > today) return false
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
     if (filterPriorities.size > 0 && !filterPriorities.has(t.priority)) return false
@@ -219,6 +232,28 @@ export default function BacklogPage() {
   function tasksForBoard(boardId: string) {
     return tasks.filter(t => t.task_boards.some(tb => tb.board_id === boardId))
   }
+
+  const allUnassigned          = tasks.filter(t => t.task_boards.length === 0)
+  const unassignedStories      = allUnassigned.filter(t => t.type === 'story')
+  const unassignedChildMap     = allUnassigned.reduce<Record<string, Task[]>>((acc, t) => {
+    if (t.type === 'task' && t.parent_id) { (acc[t.parent_id] ??= []).push(t) }
+    return acc
+  }, {})
+  const unassignedOrphans      = allUnassigned.filter(t =>
+    t.type === 'task' && (!t.parent_id || !unassignedStories.some(s => s.id === t.parent_id))
+  )
+  const filteredUnassignedStories = unassignedStories.filter(story =>
+    matchesFilters(story) || (unassignedChildMap[story.id] ?? []).some(matchesFilters)
+  )
+  const filteredUnassignedOrphans = unassignedOrphans.filter(matchesFilters)
+
+  const doneTasks = tasks.filter(t => {
+    if (statusMap[t.status_id]?.label !== 'Done') return false
+    if (!showFuture && t.start_date && new Date(t.start_date) > today) return false
+    if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
+    if (filterPriorities.size > 0 && !filterPriorities.has(t.priority)) return false
+    return true
+  })
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -269,15 +304,6 @@ export default function BacklogPage() {
 
           {showFilter && (
             <div className="absolute top-10 left-0 z-40 bg-sq-col border border-sq-muted rounded-xl p-4 w-56 flex flex-col gap-4 shadow-xl">
-              <button
-                onClick={toggleShowDone}
-                className={`flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors ${showDone ? 'bg-sq-accent text-white' : 'text-sq-nav-inactive hover:text-white'}`}
-              >
-                <span>Show Done</span>
-                <div className={`w-8 h-4 rounded-full transition-colors ${showDone ? 'bg-white/30' : 'bg-sq-muted/40'}`}>
-                  <div className={`w-3 h-3 rounded-full bg-white mt-0.5 transition-transform ${showDone ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                </div>
-              </button>
               <div className="flex flex-col gap-2">
                 <span className="text-white text-sm font-semibold">Priority</span>
                 {Object.entries(PRIORITY_LABELS).map(([val, label]) => {
@@ -373,7 +399,7 @@ export default function BacklogPage() {
                 <button onClick={() => { setModalConfig({ type: 'task' }); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
                   Add Task
                 </button>
-                <button onClick={() => {}} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                <button onClick={() => { setShowAddTable(true); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
                   Add Table
                 </button>
 
@@ -555,10 +581,148 @@ export default function BacklogPage() {
         )
       })}
 
+      {/* Unassigned — tasks with no board */}
+      {(filteredUnassignedStories.length > 0 || filteredUnassignedOrphans.length > 0) && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full shrink-0 bg-sq-muted" />
+            <span className="text-white font-bold text-lg">Unassigned</span>
+          </div>
+          <div className="flex flex-col rounded-xl overflow-hidden border border-sq-col">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-sq-col bg-sq-col/50">
+              <span className="text-white font-semibold text-sm">No team · No table</span>
+              <span className="text-white/40 text-xs ml-1">{filteredUnassignedStories.length + filteredUnassignedOrphans.length} items</span>
+            </div>
+            <div className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2 bg-sq-col border-b border-sq-col/60">
+              <span /><span className="text-white/40 text-xs font-medium">Title</span>
+              <span className="text-white/40 text-xs font-medium">Status</span>
+              <span className="text-white/40 text-xs font-medium">Active for</span>
+              <span className="text-white/40 text-xs font-medium">Priority</span>
+              <span className="text-white/40 text-xs font-medium">Assignee</span>
+              <span className="text-white/40 text-xs font-medium text-center">Sub</span>
+            </div>
+            <div className="flex flex-col divide-y divide-sq-col/40 bg-sq-card">
+              {filteredUnassignedStories.map(story => {
+                const allChildren     = unassignedChildMap[story.id] ?? []
+                const visibleChildren = allChildren.filter(matchesFilters)
+                const isOpen          = openStories.has(story.id)
+                return (
+                  <div key={story.id}>
+                    <div className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center group">
+                      <div className="flex items-center justify-center cursor-pointer" onClick={() => allChildren.length > 0 ? toggleStory(story.id) : setSelectedTaskId(story.id)}>
+                        {allChildren.length > 0
+                          ? <IconChevronRight size={14} className="text-white/40 transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
+                          : <IconBooks size={14} className="text-sq-accent" />}
+                      </div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        {allChildren.length > 0 && <IconBooks size={14} className="text-sq-accent shrink-0" />}
+                        <span className="text-white text-sm font-semibold truncate hover:underline cursor-pointer" onClick={() => setSelectedTaskId(story.id)}>{story.title}</span>
+                      </div>
+                      <StatusBadge status={statusMap[story.status_id]} />
+                      <span className="text-white text-xs">{timeElapsed(story.start_date)}</span>
+                      <PriorityBadge priority={story.priority} />
+                      <span className="text-white text-xs truncate">{story.assignee_user?.full_name ?? '—'}</span>
+                      <span className="text-white/50 text-xs text-center">{story.subtasks[0]?.count ?? 0}</span>
+                    </div>
+                    {isOpen && visibleChildren.map(child => (
+                      <div key={child.id} className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2 hover:bg-sq-col/40 transition-colors items-center bg-sq-col/20">
+                        <span />
+                        <div className="flex items-center gap-2 min-w-0 pl-5">
+                          <IconClipboard size={13} className="text-sq-task-icon shrink-0" />
+                          <span className="text-white text-xs truncate hover:underline cursor-pointer" onClick={() => setSelectedTaskId(child.id)}>{child.title}</span>
+                        </div>
+                        <StatusBadge status={statusMap[child.status_id]} />
+                        <span className="text-white text-xs">{timeElapsed(child.start_date)}</span>
+                        <PriorityBadge priority={child.priority} />
+                        <span className="text-white text-xs truncate">{child.assignee_user?.full_name ?? '—'}</span>
+                        <div className="flex items-center justify-center gap-1 text-white/40 text-xs">
+                          <IconSubtask size={11} /><span>{child.subtasks[0]?.count ?? 0}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+              {filteredUnassignedOrphans.map(task => (
+                <div key={task.id} className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center">
+                  <div className="flex items-center justify-center"><IconClipboard size={14} className="text-sq-task-icon" /></div>
+                  <span className="text-white text-sm truncate hover:underline cursor-pointer" onClick={() => setSelectedTaskId(task.id)}>{task.title}</span>
+                  <StatusBadge status={statusMap[task.status_id]} />
+                  <span className="text-white text-xs">{timeElapsed(task.start_date)}</span>
+                  <PriorityBadge priority={task.priority} />
+                  <span className="text-white text-xs truncate">{task.assignee_user?.full_name ?? '—'}</span>
+                  <div className="flex items-center justify-center gap-1 text-white/40 text-xs">
+                    <IconSubtask size={11} /><span>{task.subtasks[0]?.count ?? 0}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {hiddenCount > 0 && (
         <p className="text-sq-muted text-xs text-center">
           {hiddenCount} team{hiddenCount > 1 ? 's' : ''} hidden — use the Teams button to show them
         </p>
+      )}
+
+      {/* Done table */}
+      {doneTasks.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={toggleShowDone}
+            className="flex items-center gap-2 text-sq-muted hover:text-white transition-colors w-fit"
+          >
+            <IconChevronRight
+              size={14}
+              className="transition-transform"
+              style={{ transform: showDone ? 'rotate(90deg)' : 'rotate(0deg)' }}
+            />
+            <span className="text-sm font-semibold">Done</span>
+            <span className="text-white/30 text-xs">({doneTasks.length})</span>
+          </button>
+
+          {showDone && (
+            <div className="flex flex-col rounded-xl overflow-hidden border border-sq-col">
+              <div className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2 bg-sq-col border-b border-sq-col/60">
+                <span /><span className="text-white/40 text-xs font-medium">Title</span>
+                <span className="text-white/40 text-xs font-medium">Status</span>
+                <span className="text-white/40 text-xs font-medium">Active for</span>
+                <span className="text-white/40 text-xs font-medium">Priority</span>
+                <span className="text-white/40 text-xs font-medium">Assignee</span>
+                <span className="text-white/40 text-xs font-medium text-center">Sub</span>
+              </div>
+              <div className="flex flex-col divide-y divide-sq-col/40 bg-sq-card">
+                {doneTasks.map(task => (
+                  <div
+                    key={task.id}
+                    className="grid grid-cols-[24px_1fr_130px_110px_90px_150px_50px] gap-2 px-4 py-2.5 hover:bg-sq-col/40 transition-colors items-center"
+                  >
+                    <div className="flex items-center justify-center">
+                      {task.type === 'story'
+                        ? <IconBooks size={14} className="text-sq-accent opacity-50" />
+                        : <IconClipboard size={14} className="text-sq-task-icon opacity-50" />}
+                    </div>
+                    <span
+                      className="text-white/50 text-sm truncate line-through hover:text-white/80 cursor-pointer transition-colors"
+                      onClick={() => setSelectedTaskId(task.id)}
+                    >
+                      {task.title}
+                    </span>
+                    <StatusBadge status={statusMap[task.status_id]} />
+                    <span className="text-white/50 text-xs">{timeElapsed(task.start_date)}</span>
+                    <PriorityBadge priority={task.priority} />
+                    <span className="text-white/50 text-xs truncate">{task.assignee_user?.full_name ?? '—'}</span>
+                    <div className="flex items-center justify-center gap-1 text-white/30 text-xs">
+                      <IconSubtask size={11} /><span>{task.subtasks[0]?.count ?? 0}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {selectedTaskId && (
@@ -571,6 +735,61 @@ export default function BacklogPage() {
           onClose={() => setModalConfig(null)}
           onCreated={() => { setModalConfig(null); fetchData() }}
         />
+      )}
+      {showAddTable && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 backdrop-blur-sm bg-black/20" onClick={() => setShowAddTable(false)} />
+          <div className="relative bg-sq-card rounded-xl p-6 w-96 flex flex-col gap-4 shadow-xl">
+            <h2 className="text-white font-bold text-lg">New Table</h2>
+            <div className="flex flex-col gap-1">
+              <label className="text-white text-sm font-medium">Name</label>
+              <input
+                autoFocus
+                value={newTableName}
+                onChange={e => setNewTableName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && createTable()}
+                placeholder="Table name..."
+                className="bg-sq-col border border-sq-muted rounded-lg text-white text-sm px-3 py-2 outline-none placeholder:text-sq-muted"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-white text-sm font-medium">Team</label>
+              <select
+                value={newTableTeamId}
+                onChange={e => setNewTableTeamId(e.target.value)}
+                className="bg-sq-col border border-sq-muted rounded-lg text-white text-sm px-3 py-2 outline-none"
+              >
+                <option value="" disabled>Select team...</option>
+                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-white text-sm font-medium">Color</label>
+              <div className="flex items-center gap-3">
+                <label className="cursor-pointer">
+                  <div className="w-8 h-8 rounded-lg border border-sq-muted" style={{ backgroundColor: newTableColor }} />
+                  <input type="color" value={newTableColor} onChange={e => setNewTableColor(e.target.value)} className="sr-only" />
+                </label>
+                <span className="text-sq-muted text-xs">{newTableColor}</span>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={createTable}
+                disabled={!newTableName.trim() || !newTableTeamId}
+                className="flex-1 bg-sq-accent text-white py-2 rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Create
+              </button>
+              <button
+                onClick={() => setShowAddTable(false)}
+                className="px-4 py-2 rounded-lg text-sm text-sq-muted hover:text-white border border-sq-muted transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -12,9 +12,11 @@ type Props = {
   editDescription: string
   onDescriptionChange: (val: string) => void
   onRefresh: () => void
+  stories: { id: string; title: string }[]
+  onUpdateParent: (parentId: string | null) => void
 }
 
-export default function TaskDetailOverview({ taskId, task, editing, editDescription, onDescriptionChange, onRefresh }: Props) {
+export default function TaskDetailOverview({ taskId, task, editing, editDescription, onDescriptionChange, onRefresh, stories, onUpdateParent }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [previewUrl, setPreviewUrl]   = useState<string | null>(null)
   const [newSubtask, setNewSubtask]   = useState('')
@@ -79,26 +81,32 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
     onRefresh()
   }
 
+  async function deleteSubtask(id: string) {
+    await supabase.from('subtasks').delete().eq('id', id)
+    onRefresh()
+  }
+
   return (
     <>
       {/* Description */}
-      <div className="flex flex-col gap-2">
-        <label className="text-white font-semibold text-base">Description</label>
-        {editing
-          ? <textarea
-              value={editDescription}
-              onChange={e => onDescriptionChange(e.target.value)}
-              placeholder="Describe the task..."
-              rows={4}
-              className="bg-sq-col border border-sq-muted rounded text-white text-sm p-3 outline-none resize-none placeholder:text-sq-muted"
-            />
-          : <p className="text-white/80 text-base leading-relaxed">
-              {task.description || <span className="italic text-sq-muted">No description</span>}
-            </p>
-        }
-      </div>
+      {(editing || task.description) && (
+        <div className="flex flex-col gap-2">
+          <label className="text-white font-semibold text-base">Description</label>
+          {editing
+            ? <textarea
+                value={editDescription}
+                onChange={e => onDescriptionChange(e.target.value)}
+                placeholder="Describe the task..."
+                rows={4}
+                className="bg-sq-col border border-sq-muted rounded text-white text-sm p-3 outline-none resize-none placeholder:text-sq-muted"
+              />
+            : <p className="text-white/80 text-base leading-relaxed">{task.description}</p>
+          }
+        </div>
+      )}
 
       {/* Attachments */}
+      {(editing || attachments.length > 0) && (
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <label className="text-white font-semibold text-base">Attachments</label>
@@ -138,9 +146,28 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
           <span className="text-sq-muted text-xs italic">Maximum 5 images reached</span>
         )}
       </div>
+      )}
+
+      {/* Story — tasks only */}
+      {task.type === 'task' && (editing || !!task.parent?.title) && (
+        <div className="flex flex-col gap-2">
+          <label className="text-white font-semibold text-base">Story</label>
+          {editing
+            ? <select
+                value={task.parent_id ?? ''}
+                onChange={e => onUpdateParent(e.target.value || null)}
+                className="bg-sq-col border border-sq-muted rounded text-white text-sm px-3 py-2 outline-none"
+              >
+                <option value="">None</option>
+                {stories.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+            : <span className="text-white text-sm">{task.parent?.title}</span>
+          }
+        </div>
+      )}
 
       {/* Subtasks — tasks only */}
-      {task.type !== 'story' && (
+      {task.type !== 'story' && (editing || task.subtasks.length > 0) && (
         <div className="flex flex-col gap-2">
           <label className="text-white font-semibold text-base">
             Subtasks ({task.subtasks.filter(s => s.is_done).length}/{task.subtasks.length})
@@ -150,20 +177,27 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
             : (
               <div className="flex flex-col gap-1">
                 {task.subtasks.sort((a, b) => a.position - b.position).map(sub => (
-                  <button
-                    key={sub.id}
-                    onClick={() => toggleSubtask(sub)}
-                    className="flex items-center gap-3 text-left group"
-                  >
-                    <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                      sub.is_done ? 'bg-sq-accent border-sq-accent' : 'border-sq-muted group-hover:border-white'
-                    }`}>
-                      {sub.is_done && <IconCheck size={10} className="text-white" />}
-                    </div>
-                    <span className={`text-base ${sub.is_done ? 'line-through text-sq-muted' : 'text-white'}`}>
-                      {sub.title}
-                    </span>
-                  </button>
+                  <div key={sub.id} className="flex items-center gap-3 group">
+                    <button
+                      onClick={() => toggleSubtask(sub)}
+                      className="flex items-center gap-3 text-left flex-1 min-w-0"
+                    >
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                        sub.is_done ? 'bg-sq-accent border-sq-accent' : 'border-sq-muted group-hover:border-white'
+                      }`}>
+                        {sub.is_done && <IconCheck size={10} className="text-white" />}
+                      </div>
+                      <span className={`text-base ${sub.is_done ? 'line-through text-sq-muted' : 'text-white'}`}>
+                        {sub.title}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => deleteSubtask(sub.id)}
+                      className="text-sq-muted hover:text-sq-danger transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                    >
+                      <IconX size={13} />
+                    </button>
+                  </div>
                 ))}
               </div>
             )

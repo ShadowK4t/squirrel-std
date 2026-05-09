@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { IconClipboard, IconX, IconPlus, IconTrash, IconBooks } from '@tabler/icons-react'
+import { IconClipboard, IconLink, IconX, IconPlus, IconTrash, IconBooks } from '@tabler/icons-react'
 
 type Status = { id: string; label: string; color: string }
 type User   = { id: string; full_name: string }
@@ -43,7 +43,11 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
   const [parentId, setParentId]       = useState(defaultParentId)
   const [teamId, setTeamId]           = useState('')
   const [boardId, setBoardId]         = useState('')
-  const [subtasks, setSubtasks]       = useState<string[]>([''])
+  const [subtasks, setSubtasks]           = useState<string[]>([''])
+  const [linkedTaskIds, setLinkedTaskIds]     = useState<string[]>([])
+  const [newLinkedTaskId, setNewLinkedTaskId] = useState('')
+  const [allTasks, setAllTasks]               = useState<{ id: string; title: string }[]>([])
+  const [stagedFiles, setStagedFiles]         = useState<{ file: File; preview: string }[]>([])
 
   useEffect(() => {
     const supabase = createClient()
@@ -63,6 +67,9 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
     supabase.from('tasks').select('id, title, task_boards(board_id)').eq('type', 'story')
       .then(({ data }) => { if (data) setStories(data as unknown as Story[]) })
 
+    supabase.from('tasks').select('id, title').order('title')
+      .then(({ data }) => { if (data) setAllTasks(data) })
+
     supabase.from('boards').select('id, name, team_id').order('name')
       .then(({ data }) => { if (data) setBoards(data) })
 
@@ -77,13 +84,16 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
     })
   }, [])
 
-  // When a parent story is selected, inherit its board
+  // When a parent story is selected, inherit its board and team
   useEffect(() => {
     if (!parentId) return
     const parent = stories.find(s => s.id === parentId)
-    const inherited = parent?.task_boards[0]?.board_id
-    if (inherited) setBoardId(inherited)
-  }, [parentId, stories])
+    const inheritedBoardId = parent?.task_boards[0]?.board_id
+    if (!inheritedBoardId) return
+    setBoardId(inheritedBoardId)
+    const board = boards.find(b => b.id === inheritedBoardId)
+    if (board) setTeamId(board.team_id)
+  }, [parentId, stories, boards])
 
   const teamBoards = boards.filter(b => b.team_id === teamId)
   const activeStatus = statuses.find(s => s.id === statusId)
@@ -115,6 +125,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
         parent_id: type === 'task' ? (parentId || null) : null,
         created_by: currentUser?.id,
         type,
+        related_task_ids: linkedTaskIds.length > 0 ? linkedTaskIds : [],
       })
       .select('id')
       .single()
@@ -140,6 +151,21 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
     if (boardId) {
       await supabase.from('task_boards').insert({ task_id: task.id, board_id: boardId })
+    }
+
+    if (stagedFiles.length > 0) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        for (const { file } of stagedFiles) {
+          const path = `${task.id}/${Date.now()}_${file.name}`
+          const { error } = await supabase.storage.from('task-images').upload(path, file)
+          if (error) continue
+          const { data: { publicUrl } } = supabase.storage.from('task-images').getPublicUrl(path)
+          await supabase.from('task_attachments').insert({
+            task_id: task.id, url: publicUrl, file_name: file.name, type: 'image', uploaded_by: user.id,
+          })
+        }
+      }
     }
 
     setLoading(false)
@@ -233,6 +259,62 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
             </div>
 
             <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label className="text-white font-semibold text-base">Attachments</label>
+                <span className="text-sq-muted text-xs">{stagedFiles.length}/5</span>
+              </div>
+              {stagedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {stagedFiles.map((f, i) => (
+                    <div key={i} className="relative group w-20 h-20">
+                      <img src={f.preview} alt={f.file.name} className="w-20 h-20 object-cover rounded-lg" />
+                      <button
+                        onClick={() => setStagedFiles(prev => { URL.revokeObjectURL(prev[i].preview); return prev.filter((_, idx) => idx !== i) })}
+                        className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <IconX size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {stagedFiles.length < 5
+                ? <>
+                    <input
+                      id="create-file-upload"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={e => {
+                        const files = Array.from(e.target.files ?? []).slice(0, 5 - stagedFiles.length)
+                        setStagedFiles(prev => [...prev, ...files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))])
+                        e.target.value = ''
+                      }}
+                      className="hidden"
+                    />
+                    <label htmlFor="create-file-upload" className="flex items-center gap-1.5 text-sq-muted hover:text-white text-xs cursor-pointer transition-colors w-fit">
+                      <IconPlus size={14} /> Upload image ({5 - stagedFiles.length} remaining)
+                    </label>
+                  </>
+                : <span className="text-sq-muted text-xs italic">Maximum 5 images reached</span>
+              }
+            </div>
+
+            {type === 'task' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-white font-semibold text-base">Story</label>
+                <select
+                  value={parentId}
+                  onChange={e => setParentId(e.target.value)}
+                  className="bg-sq-col border border-sq-muted rounded text-white text-sm px-3 py-2 outline-none"
+                >
+                  <option value="">Select a story...</option>
+                  {stories.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
               <label className="text-white font-semibold text-base">Subtasks</label>
               <div className="flex flex-col gap-1">
                 {subtasks.map((sub, i) => (
@@ -260,22 +342,48 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
               </button>
             </div>
 
-            {/* Parent story selector — tasks only */}
-            {type === 'task' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-white font-semibold text-base">Story</label>
-                <select
-                  value={parentId}
-                  onChange={e => setParentId(e.target.value)}
-                  className="bg-sq-col border border-sq-muted rounded text-white text-sm px-3 py-2 outline-none"
-                >
-                  <option value="">Select a story...</option>
-                  {stories.map(s => (
-                    <option key={s.id} value={s.id}>{s.title}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Linked Tasks */}
+            <div className="flex flex-col gap-2">
+              <label className="text-white font-semibold text-base">Linked Tasks</label>
+              {linkedTaskIds.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  {linkedTaskIds.map(id => {
+                    const t = allTasks.find(t => t.id === id)
+                    if (!t) return null
+                    return (
+                      <div key={id} className="flex items-center justify-between gap-2 bg-sq-col rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <IconLink size={13} className="text-sq-muted shrink-0" />
+                          <span className="text-white text-sm truncate">{t.title}</span>
+                        </div>
+                        <button
+                          onClick={() => setLinkedTaskIds(prev => prev.filter(i => i !== id))}
+                          className="text-sq-muted hover:text-sq-danger transition-colors shrink-0"
+                        >
+                          <IconX size={13} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <select
+                value={newLinkedTaskId}
+                onChange={e => {
+                  const val = e.target.value
+                  if (!val) return
+                  setLinkedTaskIds(prev => prev.includes(val) ? prev : [...prev, val])
+                  setNewLinkedTaskId('')
+                }}
+                className="bg-sq-col border border-sq-muted rounded text-white text-sm px-3 py-2 outline-none"
+              >
+                <option value="">Add blocking task...</option>
+                {allTasks
+                  .filter(t => !linkedTaskIds.includes(t.id))
+                  .map(t => <option key={t.id} value={t.id}>{t.title}</option>)
+                }
+              </select>
+            </div>
 
             {error && <p className="text-sq-danger text-sm">{error}</p>}
           </div>
@@ -328,9 +436,10 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
             <div className="flex flex-col gap-1">
               <label className="text-white text-sm font-medium">Board</label>
+              {!teamId && <span className="text-sq-muted text-xs">Select a team first</span>}
               <select value={boardId} onChange={e => setBoardId(e.target.value)}
                 className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none"
-                disabled={!teamId && !boardId}>
+                disabled={!teamId}>
                 <option value="">Select...</option>
                 {teamBoards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>

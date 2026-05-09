@@ -97,6 +97,14 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
 
   async function updateField(field: string, value: string | number | null) {
     const normalized = value === '' ? null : value
+    if (field === 'status_id' && task && (task.related_task_ids ?? []).length > 0) {
+      const targetStatus = statuses.find(s => s.id === normalized)
+      if (targetStatus && ['Review', 'Done'].includes(targetStatus.label)) {
+        const doneStatus = statuses.find(s => s.label === 'Done')
+        const { data: linked } = await supabase.from('tasks').select('status_id').in('id', task.related_task_ids ?? [])
+        if (linked?.some(t => t.status_id !== doneStatus?.id)) return
+      }
+    }
     await supabase.from('tasks').update({ [field]: normalized }).eq('id', taskId)
     setTask(prev => prev ? { ...prev, [field]: normalized } : prev)
     onUpdated()
@@ -222,7 +230,10 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               editDescription={editDescription}
               onDescriptionChange={setEditDescription}
               onRefresh={fetchTask}
+              stories={stories}
+              onUpdateParent={val => updateField('parent_id', val)}
             />
+
             <TaskDetailRelations
               taskId={taskId}
               task={task}
@@ -301,20 +312,6 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               </div>
             )}
 
-            {/* Story — tasks only */}
-            {task.type === 'task' && (editing || task.parent_id) && (
-              <div className="flex flex-col gap-1">
-                <label className="text-white text-sm font-medium">Story</label>
-                {editing
-                  ? <select value={task.parent_id ?? ''} onChange={e => updateField('parent_id', e.target.value)}
-                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
-                      <option value="">None</option>
-                      {stories.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-                    </select>
-                  : <span className="text-white text-sm">{task.parent?.title}</span>
-                }
-              </div>
-            )}
 
             {/* Team */}
             {(editing || responsibleTeam) && (
@@ -336,13 +333,17 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               <div className="flex flex-col gap-1">
                 <label className="text-white text-sm font-medium">Board</label>
                 {editing
-                  ? <select
-                      value={task.task_boards[0]?.board_id ?? ''}
-                      onChange={e => updateBoard(e.target.value)}
-                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
-                      <option value="">None</option>
-                      {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
+                  ? <>
+                      {!responsibleTeamId && <span className="text-sq-muted text-xs">Select a team first</span>}
+                      <select
+                        value={task.task_boards[0]?.board_id ?? ''}
+                        onChange={e => updateBoard(e.target.value)}
+                        disabled={!responsibleTeamId}
+                        className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
+                        <option value="">None</option>
+                        {boards.filter(b => b.team_id === responsibleTeamId).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </>
                   : <span className="text-white text-sm">{task.task_boards[0]?.board.name}</span>
                 }
               </div>

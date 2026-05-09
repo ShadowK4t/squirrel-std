@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { IconLink, IconPlus, IconX } from '@tabler/icons-react'
+import { IconLink, IconLock, IconPlus, IconX } from '@tabler/icons-react'
 import type { TaskDetail, LinkedTask } from './task-detail-types'
 
 type Props = {
@@ -39,24 +39,35 @@ export default function TaskDetailRelations({ taskId, task, editing, onRefresh }
     if (!linkedId || task.related_task_ids.includes(linkedId)) return
     const updated = [...task.related_task_ids, linkedId]
     await supabase.from('tasks').update({ related_task_ids: updated }).eq('id', taskId)
+    const { data } = await supabase
+      .from('tasks')
+      .select('id, title, status:statuses!status_id(label, color)')
+      .eq('id', linkedId)
+      .single()
+    if (data) setLinkedTasks(prev => [...prev, data as unknown as LinkedTask])
     onRefresh()
   }
 
   async function removeLinkedTask(linkedId: string) {
     const updated = task.related_task_ids.filter(id => id !== linkedId)
     await supabase.from('tasks').update({ related_task_ids: updated }).eq('id', taskId)
+    setLinkedTasks(prev => prev.filter(t => t.id !== linkedId))
     onRefresh()
   }
 
   return (
     <>
       {/* Linked Tasks */}
+      {(editing || linkedTasks.length > 0) && (
       <div className="flex flex-col gap-2">
         <label className="text-white font-semibold text-base">
           Linked Tasks {linkedTasks.length > 0 && <span className="text-sq-muted font-normal text-sm">({linkedTasks.length})</span>}
         </label>
-        {linkedTasks.length === 0 && !editing && (
-          <span className="text-sq-muted text-xs italic">No blocking tasks</span>
+        {linkedTasks.some(t => t.status.label !== 'Done') && (
+          <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+            <IconLock size={13} className="text-red-400 shrink-0" />
+            <span className="text-red-400 text-xs font-semibold">Blocked — finish linked tasks first</span>
+          </div>
         )}
         {linkedTasks.length > 0 && (
           <div className="flex flex-col gap-2">
@@ -98,6 +109,7 @@ export default function TaskDetailRelations({ taskId, task, editing, onRefresh }
           </div>
         )}
       </div>
+      )}
 
       {/* Boards */}
       {task.task_boards.length > 0 && (

@@ -2,7 +2,7 @@
 
 import {
   IconBooks, IconClipboard, IconClock, IconFlame,
-  IconMessage, IconRecycle, IconSubtask, IconX,
+  IconLock, IconMessage, IconRecycle, IconSubtask, IconX,
 } from '@tabler/icons-react'
 
 export type TaskCardTask = {
@@ -26,6 +26,7 @@ type Props = {
   task: TaskCardTask
   storyTitleMap: Record<string, string>
   requestStatusId?: string
+  isBlocked?: boolean
   onOpen: () => void
   onRemove?: () => void
 }
@@ -44,7 +45,7 @@ function initials(name: string): string {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
-export default function TaskCard({ task, storyTitleMap, requestStatusId, onOpen, onRemove }: Props) {
+export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlocked, onOpen, onRemove }: Props) {
   const subtaskCount = task.subtasks[0]?.count ?? 0
   const commentCount = task.comments[0]?.count ?? 0
   const people = [task.assignee_user, task.reviewer_user].filter(Boolean) as { full_name: string }[]
@@ -53,12 +54,13 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, onOpen,
     <div
       draggable
       onDragStart={e => {
+        e.stopPropagation()
         e.dataTransfer.setData('taskId', task.id)
         e.dataTransfer.setData('application/sq-task', task.id)
         e.dataTransfer.effectAllowed = 'move'
       }}
       onClick={onOpen}
-      className="bg-sq-card rounded-xl p-3 flex flex-col gap-2.5 cursor-grab active:cursor-grabbing hover:brightness-110 transition-all group"
+      className={`bg-sq-card rounded-xl p-3 flex flex-col gap-2.5 cursor-grab active:cursor-grabbing hover:brightness-110 transition-all group ${isBlocked ? 'ring-1 ring-red-500/50' : ''}`}
     >
       {/* Row 1: Icon + Title + Version / Remove */}
       <div className="flex items-start justify-between gap-2">
@@ -70,6 +72,7 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, onOpen,
           <span className="text-white font-semibold text-sm leading-tight">{task.title}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {isBlocked && <IconLock size={12} className="text-red-400 shrink-0" />}
           {onRemove && (
             <button
               onClick={e => { e.stopPropagation(); onRemove() }}
