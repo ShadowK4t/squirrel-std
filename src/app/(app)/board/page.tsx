@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import TaskModal from '@/components/task-modal'
 import TaskDetailModal from '@/components/task-detail-modal'
 import TaskCard from '@/components/task-card'
+import ProfileModal from '@/components/profile-modal'
 
 type Status = {
   id: string
@@ -31,8 +32,8 @@ type Task = {
   start_date: string | null
   assignee: string | null
   parent_id: string | null
-  assignee_user: { full_name: string } | null
-  reviewer_user: { full_name: string } | null
+  assignee_user: { id: string; full_name: string } | null
+  reviewer_user: { id: string; full_name: string } | null
   subtasks: { count: number }[]
   comments: { count: number }[]
   task_boards: { board: { name: string; color: string } }[]
@@ -56,8 +57,8 @@ function initials(name: string): string {
 
 const TASK_SELECT = `
   id, type, title, description, version, priority, status_id, needs_acceptance, start_date, assignee, parent_id, related_task_ids,
-  assignee_user:users!assignee(full_name),
-  reviewer_user:users!reviewer_id(full_name),
+  assignee_user:users!assignee(id, full_name),
+  reviewer_user:users!reviewer_id(id, full_name),
   subtasks(count),
   comments(count),
   task_boards(board:boards(name, color)),
@@ -70,8 +71,9 @@ export default function BoardPage() {
   const [tasks, setTasks]                   = useState<Task[]>([])
   const [users, setUsers]                   = useState<User[]>([])
   const [currentUserId, setCurrentUserId]   = useState<string | null>(null)
-  const [showModal, setShowModal]           = useState(false)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [showModal, setShowModal]               = useState(false)
+  const [selectedTaskId, setSelectedTaskId]     = useState<string | null>(null)
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
 
   const [search, setSearch]                       = useState('')
@@ -82,32 +84,29 @@ export default function BoardPage() {
   const [showFuture, setShowFuture]               = useState(false)
   const [showCreateMenu, setShowCreateMenu]       = useState(false)
   const [dragOverColumnId, setDragOverColumnId]   = useState<string | null>(null)
-  const [hiddenColumns, setHiddenColumns]         = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set()
-    try {
-      const stored = localStorage.getItem(HIDDEN_COLUMNS_KEY)
-      return stored ? new Set(JSON.parse(stored)) : new Set()
-    } catch { return new Set() }
-  })
-  const [personalColumns, setPersonalColumns]     = useState<PersonalColumn[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const stored = localStorage.getItem(PERSONAL_COLUMNS_KEY)
-      const parsed: any[] = stored ? JSON.parse(stored) : []
-      return parsed.map(c => ({ ...c, color: c.color ?? '#6272a4' }))
-    } catch { return [] }
-  })
-  const [columnOrder, setColumnOrder]         = useState<string[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const stored = localStorage.getItem(COLUMN_ORDER_KEY)
-      return stored ? JSON.parse(stored) : []
-    } catch { return [] }
-  })
+  const [hiddenColumns, setHiddenColumns]     = useState<Set<string>>(new Set())
+  const [personalColumns, setPersonalColumns] = useState<PersonalColumn[]>([])
+  const [columnOrder, setColumnOrder]         = useState<string[]>([])
   const [dragColId, setDragColId]             = useState<string | null>(null)
   const [dragOverColSlot, setDragOverColSlot] = useState<string | null>(null)
 
   const filterRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    try {
+      const h = localStorage.getItem(HIDDEN_COLUMNS_KEY)
+      if (h) setHiddenColumns(new Set(JSON.parse(h)))
+    } catch {}
+    try {
+      const p = localStorage.getItem(PERSONAL_COLUMNS_KEY)
+      const parsed: any[] = p ? JSON.parse(p) : []
+      if (parsed.length) setPersonalColumns(parsed.map(c => ({ ...c, color: c.color ?? '#6272a4' })))
+    } catch {}
+    try {
+      const o = localStorage.getItem(COLUMN_ORDER_KEY)
+      if (o) setColumnOrder(JSON.parse(o))
+    } catch {}
+  }, [])
 
   async function fetchTasks() {
     
@@ -487,6 +486,7 @@ export default function BoardPage() {
                     requestStatusId={requestStatus?.id}
                     isBlocked={blockedTaskIds.has(task.id)}
                     onOpen={() => setSelectedTaskId(task.id)}
+                    onUserClick={setSelectedProfileId}
                   />
                 ))}
               </div>
@@ -586,6 +586,10 @@ export default function BoardPage() {
           onClose={() => setShowModal(false)}
           onCreated={() => { setShowModal(false); fetchTasks() }}
         />
+      )}
+
+      {selectedProfileId && (
+        <ProfileModal userId={selectedProfileId} onClose={() => setSelectedProfileId(null)} />
       )}
     </div>
   )

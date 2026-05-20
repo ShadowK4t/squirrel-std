@@ -14,8 +14,8 @@ export type TaskCardTask = {
   status_id: string
   start_date: string | null
   parent_id: string | null
-  assignee_user: { full_name: string } | null
-  reviewer_user: { full_name: string } | null
+  assignee_user: { id: string; full_name: string } | null
+  reviewer_user: { id: string; full_name: string } | null
   subtasks: { count: number }[]
   comments: { count: number }[]
   task_boards: { board: { name: string; color: string } }[]
@@ -29,6 +29,7 @@ type Props = {
   isBlocked?: boolean
   onOpen: () => void
   onRemove?: () => void
+  onUserClick?: (userId: string) => void
 }
 
 function timeElapsed(startDate: string | null): string {
@@ -45,10 +46,10 @@ function initials(name: string): string {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
-export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlocked, onOpen, onRemove }: Props) {
+export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlocked, onOpen, onRemove, onUserClick }: Props) {
   const subtaskCount = task.subtasks[0]?.count ?? 0
   const commentCount = task.comments[0]?.count ?? 0
-  const people = [task.assignee_user, task.reviewer_user].filter(Boolean) as { full_name: string }[]
+  const people = [task.assignee_user, task.reviewer_user].filter(Boolean) as { id: string; full_name: string }[]
 
   return (
     <div
@@ -131,9 +132,14 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlock
         <div className="flex items-center">
           {people.length > 0
             ? people.map((u, i) => (
-                <div key={i} className="w-6 h-6 rounded-full bg-sq-accent border-2 border-sq-card -ml-1.5 first:ml-0 flex items-center justify-center">
+                <button
+                  key={i}
+                  onClick={e => { e.stopPropagation(); onUserClick?.(u.id) }}
+                  className="w-6 h-6 rounded-full bg-sq-accent border-2 border-sq-card -ml-1.5 first:ml-0 flex items-center justify-center hover:ring-2 hover:ring-white/40 transition-all"
+                  title={u.full_name}
+                >
                   <span className="text-white text-xs font-bold leading-none">{initials(u.full_name)}</span>
-                </div>
+                </button>
               ))
             : <div className="w-6 h-6 rounded-full bg-sq-nav-inactive border-2 border-sq-card" />
           }

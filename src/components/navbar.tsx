@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { IconLayoutKanban, IconTimeline, IconList, IconCalendar, IconBooks, IconBell } from '@tabler/icons-react'
+import { IconLayoutKanban, IconTimeline, IconList, IconCalendar, IconBooks, IconBell, IconSettings } from '@tabler/icons-react'
 import ProfileModal from '@/components/profile-modal'
 
 function initials(name: string): string {
@@ -23,14 +23,20 @@ export default function Navbar() {
   ]
 
   const [username, setUsername]         = useState('')
+  const [role, setRole]                 = useState('')
   const [showProfile, setShowProfile]   = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      supabase.from('users').select('full_name').eq('id', user.id).single()
-        .then(({ data }) => { if (data) setUsername(data.full_name) })
+      supabase.from('users').select('full_name, role').eq('id', user.id).single()
+        .then(({ data }) => {
+          if (data) {
+            setUsername(data.full_name)
+            setRole(data.role)
+          }
+        })
     })
   }, [])
 
@@ -66,6 +72,15 @@ export default function Navbar() {
           <button className="text-sq-nav-inactive hover:text-white transition-colors">
             <IconBell size={20} />
           </button>
+          {role === 'admin' && (
+            <Link
+              href="/settings/users"
+              className={`text-sq-nav-inactive hover:text-white transition-colors ${pathname === '/settings/users' ? 'text-white' : ''}`}
+              title="Admin"
+            >
+              <IconSettings size={20} />
+            </Link>
+          )}
           <button
             onClick={() => setShowProfile(true)}
             className="flex items-center gap-2 hover:opacity-80 transition-opacity"

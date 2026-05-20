@@ -392,7 +392,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
           <div className="w-56 bg-sq-col rounded-br-xl p-4 flex flex-col gap-4 shrink-0">
 
             <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Assignee</label>
+              <label className="text-white text-sm font-medium">Assignee <span className="text-red-500">*</span></label>
               <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
                 className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
                 <option value="">Select...</option>
@@ -411,7 +411,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Reviewer</label>
+              <label className="text-white text-sm font-medium">Reviewer <span className="text-red-500">*</span></label>
               <select value={reviewerId} onChange={e => setReviewerId(e.target.value)}
                 className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
                 <option value="">Select...</option>
