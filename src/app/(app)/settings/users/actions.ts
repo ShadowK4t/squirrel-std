@@ -81,7 +81,7 @@ export async function getUsers() {
     const supabase = await createClient()
     const { data: profiles } = await supabase
       .from('users')
-      .select('id, full_name, email, role, user_teams(is_lead, team:teams(name, color))')
+      .select('id, full_name, email, role, user_teams(is_lead, team:teams(id, name, color))')
 
     const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]))
 
@@ -96,6 +96,7 @@ export async function getUsers() {
         full_name: profile?.full_name ?? authUser.email ?? '',
         role: profile?.role ?? 'normal',
         teams: (profile?.user_teams ?? []).map((ut: any) => ({
+          id: ut.team?.id ?? '',
           name: ut.team?.name ?? '',
           color: ut.team?.color ?? '#6272a4',
           is_lead: ut.is_lead,
@@ -111,6 +112,36 @@ export async function getUsers() {
     }
 
     return { active, pending }
+  } catch (e: any) {
+    return { error: e.message }
+  }
+}
+
+export async function addUserTeam(userId: string, teamId: string) {
+  try {
+    await requireAdmin()
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from('user_teams')
+      .upsert({ user_id: userId, team_id: teamId }, { onConflict: 'user_id,team_id' })
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (e: any) {
+    return { error: e.message }
+  }
+}
+
+export async function removeUserTeam(userId: string, teamId: string) {
+  try {
+    await requireAdmin()
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from('user_teams')
+      .delete()
+      .eq('user_id', userId)
+      .eq('team_id', teamId)
+    if (error) return { error: error.message }
+    return { success: true }
   } catch (e: any) {
     return { error: e.message }
   }

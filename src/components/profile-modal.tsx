@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { IconX, IconEdit, IconBrandDiscord } from '@tabler/icons-react'
+import { IconX, IconEdit, IconBrandDiscord, IconCamera } from '@tabler/icons-react'
 
-type Profile  = { full_name: string; email: string; description: string | null; role: string; discord: string | null }
+type Profile = {
+  full_name: string
+  email: string
+  description: string | null
+  role: string
+  discord: string | null
+  avatar_url: string | null
+  banner_color: string | null
+}
 type Team     = { name: string; color: string }
 type JobTitle = { name: string }
 type Task     = { id: string; title: string; status: { label: string; color: string } | null; priority: number }
@@ -22,17 +30,19 @@ function initials(name: string): string {
 type Props = { onClose: () => void; userId?: string }
 
 export default function ProfileModal({ onClose, userId }: Props) {
-  const [profile, setProfile]               = useState<Profile | null>(null)
-  const [teams, setTeams]                   = useState<Team[]>([])
-  const [jobTitles, setJobTitles]           = useState<JobTitle[]>([])
-  const [tasks, setTasks]                   = useState<Task[]>([])
-  const [loading, setLoading]               = useState(true)
-  const [visible, setVisible]               = useState(false)
-  const [editMode, setEditMode]             = useState(false)
-  const [editName, setEditName]             = useState('')
-  const [editEmail, setEditEmail]           = useState('')
+  const [profile, setProfile]                   = useState<Profile | null>(null)
+  const [teams, setTeams]                       = useState<Team[]>([])
+  const [jobTitles, setJobTitles]               = useState<JobTitle[]>([])
+  const [tasks, setTasks]                       = useState<Task[]>([])
+  const [loading, setLoading]                   = useState(true)
+  const [visible, setVisible]                   = useState(false)
+  const [editMode, setEditMode]                 = useState(false)
+  const [editName, setEditName]                 = useState('')
+  const [editEmail, setEditEmail]               = useState('')
   const [editAvailability, setEditAvailability] = useState('')
-  const [editDiscord, setEditDiscord]       = useState('')
+  const [editDiscord, setEditDiscord]           = useState('')
+  const [editBannerColor, setEditBannerColor]   = useState('#6272a4')
+  const [uploadingAvatar, setUploadingAvatar]   = useState(false)
 
   const isOwnProfile = !userId
 
@@ -42,7 +52,7 @@ export default function ProfileModal({ onClose, userId }: Props) {
 
     async function load(targetId: string) {
       const [profileRes, teamsRes, jobsRes] = await Promise.all([
-        supabase.from('users').select('full_name, email, description, role, discord').eq('id', targetId).single(),
+        supabase.from('users').select('full_name, email, description, role, discord, avatar_url, banner_color').eq('id', targetId).single(),
         supabase.from('user_teams').select('team:teams(name, color)').eq('user_id', targetId),
         supabase.from('user_job_titles').select('job_title:job_titles(name)').eq('user_id', targetId),
       ])
@@ -52,17 +62,15 @@ export default function ProfileModal({ onClose, userId }: Props) {
         setEditEmail(profileRes.data.email)
         setEditAvailability(profileRes.data.description ?? '')
         setEditDiscord(profileRes.data.discord ?? '')
+        setEditBannerColor(profileRes.data.banner_color ?? '#6272a4')
       }
       if (teamsRes.data) setTeams(teamsRes.data.map((r: any) => r.team))
       if (jobsRes.data) setJobTitles(jobsRes.data.map((r: any) => r.job_title))
       if (!isOwnProfile) {
         const { data: taskData } = await supabase.from('tasks')
           .select('id, title, status:statuses(label, color), priority')
-          .eq('assignee', targetId)
-          .eq('type', 'task')
-          .eq('is_future', false)
-          .order('created_at', { ascending: false })
-          .limit(20)
+          .eq('assignee', targetId).eq('type', 'task').eq('is_future', false)
+          .order('created_at', { ascending: false }).limit(20)
         if (taskData) setTasks(taskData.map((r: any) => ({ ...r, status: r.status })))
       }
       setLoading(false)
@@ -88,6 +96,7 @@ export default function ProfileModal({ onClose, userId }: Props) {
       setEditEmail(profile.email)
       setEditAvailability(profile.description ?? '')
       setEditDiscord(profile.discord ?? '')
+      setEditBannerColor(profile.banner_color ?? '#6272a4')
     }
     setEditMode(false)
   }
@@ -101,6 +110,7 @@ export default function ProfileModal({ onClose, userId }: Props) {
       email: editEmail,
       description: editAvailability || null,
       discord: editDiscord || null,
+      banner_color: editBannerColor,
     }).eq('id', user.id)
     setProfile(p => p ? {
       ...p,
@@ -108,9 +118,29 @@ export default function ProfileModal({ onClose, userId }: Props) {
       email: editEmail,
       description: editAvailability || null,
       discord: editDiscord || null,
+      banner_color: editBannerColor,
     } : p)
     setEditMode(false)
   }
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingAvatar(true)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setUploadingAvatar(false); return }
+    const path = `${user.id}/avatar`
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+    if (error) { setUploadingAvatar(false); return }
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+    const urlWithBust = `${publicUrl}?t=${Date.now()}`
+    await supabase.from('users').update({ avatar_url: urlWithBust }).eq('id', user.id)
+    setProfile(p => p ? { ...p, avatar_url: urlWithBust } : p)
+    setUploadingAvatar(false)
+  }
+
+  const bannerColor = editMode ? editBannerColor : (profile?.banner_color ?? '#6272a4')
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -135,12 +165,29 @@ export default function ProfileModal({ onClose, userId }: Props) {
         ) : profile && (
           <div className="flex flex-col gap-6 p-7 pt-14">
 
-            {/* Profile card */}
-            <div className="bg-zinc-400 rounded-sm p-3 flex items-center gap-5">
-              <div className="w-30 h-30 rounded-full bg-sq-bg flex items-center justify-center shrink-0">
-                <span className="text-white text-3xl font-bold">{initials(profile.full_name)}</span>
+            {/* Profile card — same layout as before, banner color replaces bg-zinc-400 */}
+            <div className="rounded-sm p-3 flex items-center gap-5" style={{ backgroundColor: bannerColor }}>
+
+              {/* Avatar — shows photo if available, else initials; upload in edit mode */}
+              <div className="relative w-30 h-30 rounded-full bg-sq-bg flex items-center justify-center shrink-0 overflow-hidden">
+                {profile.avatar_url
+                  ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                  : <span className="text-white text-3xl font-bold">{initials(profile.full_name)}</span>
+                }
+                {uploadingAvatar && (
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                    <span className="text-white text-xs font-medium">Uploading…</span>
+                  </div>
+                )}
+                {isOwnProfile && editMode && !uploadingAvatar && (
+                  <label className="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer opacity-0 hover:opacity-100 transition-opacity rounded-full">
+                    <IconCamera size={22} className="text-white" />
+                    <input type="file" accept="image/*" onChange={handleAvatarUpload} className="sr-only" />
+                  </label>
+                )}
               </div>
-              <div className="flex flex-col min-w-0">
+
+              <div className="flex flex-col min-w-0 flex-1">
                 <h2 className="text-white font-bold text-2xl leading-tight -mt-2">{profile.full_name}</h2>
                 {teams.length > 0 && (
                   <div className="flex flex-wrap gap-x-4">
@@ -153,6 +200,14 @@ export default function ProfileModal({ onClose, userId }: Props) {
                   <p className="text-white/80 text-sm mt-2">{profile.description}</p>
                 )}
               </div>
+
+              {/* Banner color picker — edit mode only */}
+              {isOwnProfile && editMode && (
+                <label className="shrink-0 cursor-pointer self-start mt-1" title="Change banner color">
+                  <div className="w-6 h-6 rounded border-2 border-white/40 hover:border-white transition-colors" style={{ backgroundColor: editBannerColor }} />
+                  <input type="color" value={editBannerColor} onChange={e => setEditBannerColor(e.target.value)} className="sr-only" />
+                </label>
+              )}
             </div>
 
             {/* Edit toggle — own profile only */}

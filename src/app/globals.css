@@ -149,3 +149,18 @@
   --sq-danger: #B84040;
   --sq-task-icon: #8B84EA;
 }
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #3A3C4A;
+}
+::-webkit-scrollbar-thumb {
+  background: #4E4E4E;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6B6B6B;
+}

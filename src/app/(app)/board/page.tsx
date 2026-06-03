@@ -1,6 +1,7 @@
 'use client'
 
-import { IconSearch, IconAdjustmentsHorizontal, IconClock, IconPlus, IconX } from '@tabler/icons-react'
+import { IconSearch, IconClock, IconPlus, IconX } from '@tabler/icons-react'
+import { createNotification } from '@/lib/notifications'
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import TaskModal from '@/components/task-modal'
@@ -18,6 +19,7 @@ type Status = {
 type User = {
   id: string
   full_name: string
+  avatar_url: string | null
 }
 
 type Task = {
@@ -31,6 +33,8 @@ type Task = {
   needs_acceptance: boolean
   start_date: string | null
   assignee: string | null
+  reviewer_id: string | null
+  created_by: string | null
   parent_id: string | null
   assignee_user: { id: string; full_name: string } | null
   reviewer_user: { id: string; full_name: string } | null
@@ -48,7 +52,7 @@ const PRIORITY_LABELS: Record<number, string> = {
 const PERSONAL_COLUMNS_KEY = 'board_personal_columns'
 const HIDDEN_COLUMNS_KEY   = 'board_hidden_columns'
 const COLUMN_ORDER_KEY     = 'board_column_order'
-type PersonalColumn = { id: string; name: string; color: string; taskIds: string[] }
+type PersonalColumn = { id: string; name: string; color: string; taskIds: string[]; statusId?: string }
 
 
 function initials(name: string): string {
@@ -56,9 +60,9 @@ function initials(name: string): string {
 }
 
 const TASK_SELECT = `
-  id, type, title, description, version, priority, status_id, needs_acceptance, start_date, assignee, parent_id, related_task_ids,
-  assignee_user:users!assignee(id, full_name),
-  reviewer_user:users!reviewer_id(id, full_name),
+  id, type, title, description, version, priority, status_id, needs_acceptance, start_date, assignee, reviewer_id, created_by, parent_id, related_task_ids,
+  assignee_user:users!assignee(id, full_name, avatar_url),
+  reviewer_user:users!reviewer_id(id, full_name, avatar_url),
   subtasks(count),
   comments(count),
   task_boards(board:boards(name, color)),
@@ -71,7 +75,9 @@ export default function BoardPage() {
   const [tasks, setTasks]                   = useState<Task[]>([])
   const [users, setUsers]                   = useState<User[]>([])
   const [currentUserId, setCurrentUserId]   = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>('')
   const [showModal, setShowModal]               = useState(false)
+  const [showRequestModal, setShowRequestModal] = useState(false)
   const [selectedTaskId, setSelectedTaskId]     = useState<string | null>(null)
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
@@ -89,6 +95,7 @@ export default function BoardPage() {
   const [columnOrder, setColumnOrder]         = useState<string[]>([])
   const [dragColId, setDragColId]             = useState<string | null>(null)
   const [dragOverColSlot, setDragOverColSlot] = useState<string | null>(null)
+  const [showAddColumn, setShowAddColumn]     = useState(false)
 
   const filterRef = useRef<HTMLDivElement>(null)
 
@@ -115,14 +122,25 @@ export default function BoardPage() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const taskParam = params.get('task')
+    if (taskParam) {
+      setSelectedTaskId(taskParam)
+      window.history.replaceState({}, '', '/board')
+    }
+  }, [])
+
+  useEffect(() => {
     supabase.from('statuses').select('*').order('position')
       .then(({ data }) => { if (data) setStatuses(data) })
-    supabase.from('users').select('id, full_name').order('full_name')
+    supabase.from('users').select('id, full_name, avatar_url').order('full_name')
       .then(({ data }) => { if (data) setUsers(data) })
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setCurrentUserId(user.id)
         setFilterUsers(new Set([user.id]))
+        supabase.from('users').select('role').eq('id', user.id).single()
+          .then(({ data }) => { if (data) setCurrentUserRole(data.role) })
       }
     })
     fetchTasks()
@@ -167,15 +185,67 @@ export default function BoardPage() {
     })
   }
 
+  async function handleApprove(taskId: string) {
+    const doneStatus = statuses.find(s => s.label === 'Done')
+    if (!doneStatus) return
+    await supabase.from('tasks').update({ status_id: doneStatus.id }).eq('id', taskId)
+    fetchTasks()
+  }
+
+  async function handleAccept(taskId: string) {
+    const toDoStatus = statuses.find(s => s.label === 'To Do')
+    if (!toDoStatus) return
+    const task = tasks.find(t => t.id === taskId)
+    await supabase.from('tasks').update({ status_id: toDoStatus.id }).eq('id', taskId)
+    if (task?.created_by) {
+      await createNotification({
+        userId: task.created_by,
+        type: 'task_accepted',
+        taskId,
+        message: `Your request "${task.title}" was accepted`,
+      })
+    }
+    fetchTasks()
+  }
+
+  async function handleReject(taskId: string) {
+    const task = tasks.find(t => t.id === taskId)
+    if (task?.created_by) {
+      await createNotification({
+        userId: task.created_by,
+        type: 'task_rejected',
+        // no taskId — task is about to be deleted (cascade would wipe the notification)
+        message: `Your request "${task.title}" was rejected`,
+      })
+    }
+    await supabase.from('tasks').delete().eq('id', taskId)
+    fetchTasks()
+  }
+
   async function handleDrop(e: React.DragEvent, statusId: string) {
     e.preventDefault()
     setDragOverStatus(null)
     const taskId = e.dataTransfer.getData('taskId')
     if (!taskId) return
     const targetStatus = statuses.find(s => s.id === statusId)
+    if (targetStatus?.label === 'Done' && currentUserRole === 'normal') return
     if (targetStatus && ['Review', 'Done'].includes(targetStatus.label) && blockedTaskIds.has(taskId)) return
     await supabase.from('tasks').update({ status_id: statusId }).eq('id', taskId)
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status_id: statusId } : t))
+    if (personalColumns.some(c => c.taskIds.includes(taskId))) {
+      saveColumns(personalColumns.map(c => ({ ...c, taskIds: c.taskIds.filter(id => id !== taskId) })))
+    }
+    if (targetStatus?.label === 'Review') {
+      const task = tasks.find(t => t.id === taskId)
+      if (task?.reviewer_id) {
+        await createNotification({
+          userId: task.reviewer_id,
+          type: 'review_requested',
+          taskId,
+          message: `A task is ready for your review: "${task.title}"`,
+        })
+      }
+    }
   }
 
   function saveColumns(cols: PersonalColumn[]) {
@@ -183,8 +253,12 @@ export default function BoardPage() {
     setPersonalColumns(cols)
   }
 
-  function addPersonalColumn() {
-    saveColumns([...personalColumns, { id: crypto.randomUUID(), name: 'New Column', color: '#6272a4', taskIds: [] }])
+  function addPersonalColumn(statusId: string) {
+    const status = statuses.find(s => s.id === statusId)
+    const label  = status?.label ?? 'Column'
+    const count  = personalColumns.filter(c => c.statusId === statusId).length
+    const name   = count === 0 ? label : `${label} ${count + 1}`
+    saveColumns([...personalColumns, { id: crypto.randomUUID(), name, color: status?.color ?? '#6272a4', statusId, taskIds: [] }])
   }
 
   function removePersonalColumn(colId: string) {
@@ -199,11 +273,16 @@ export default function BoardPage() {
     saveColumns(personalColumns.map(c => c.id === colId ? { ...c, color } : c))
   }
 
-  function handleDropOnColumn(e: React.DragEvent, colId: string) {
+  async function handleDropOnColumn(e: React.DragEvent, colId: string) {
     e.preventDefault()
     setDragOverColumnId(null)
     const taskId = e.dataTransfer.getData('taskId')
     if (!taskId) return
+    const col = personalColumns.find(c => c.id === colId)
+    if (col?.statusId) {
+      await supabase.from('tasks').update({ status_id: col.statusId }).eq('id', taskId)
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status_id: col.statusId! } : t))
+    }
     saveColumns(personalColumns.map(c => ({
       ...c,
       taskIds: c.id === colId
@@ -261,7 +340,8 @@ export default function BoardPage() {
     return true
   })
 
-  const storyTitleMap = Object.fromEntries(tasks.filter(t => t.type === 'story').map(t => [t.id, t.title]))
+  const storyTitleMap          = Object.fromEntries(tasks.filter(t => t.type === 'story').map(t => [t.id, t.title]))
+  const personalColumnTaskIds  = new Set(personalColumns.flatMap(c => c.taskIds))
   const hasActiveFilters = filterPriorities.size > 0 || filterBoards.size > 0 || hiddenColumns.size > 0
   const requestStatus    = statuses.find(s => s.label === 'Request')
   const visibleStatuses  = statuses.filter(s => s.label !== 'Request' && s.label !== 'Done' && !hiddenColumns.has(s.id))
@@ -308,7 +388,10 @@ export default function BoardPage() {
                 }`}
                 style={{ zIndex: users.length - i }}
               >
-                <span className="text-white text-xs font-bold leading-none">{initials(u.full_name)}</span>
+                {u.avatar_url
+                  ? <img src={u.avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
+                  : <span className="text-white text-xs font-bold leading-none">{initials(u.full_name)}</span>
+                }
               </button>
             )
           })}
@@ -319,7 +402,7 @@ export default function BoardPage() {
             onClick={() => setShowFilter(prev => !prev)}
             className={`flex items-center gap-2 transition-colors ${hasActiveFilters ? 'text-sq-accent' : 'text-sq-nav-inactive hover:text-white'}`}
           >
-            <IconAdjustmentsHorizontal size={18} />
+            <img src="/icons/filter.svg" width={18} height={18} alt="" />
             <span className="text-sm">Filter</span>
             {hasActiveFilters && (
               <span className="bg-sq-accent text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
@@ -405,14 +488,11 @@ export default function BoardPage() {
           {showCreateMenu && (
             <div className="absolute right-0 top-full pt-1 z-40">
               <div className="bg-sq-col border border-sq-muted rounded-xl overflow-hidden shadow-xl w-44">
-                <button onClick={() => {}} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
+                <button onClick={() => { setShowRequestModal(true); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
                   Add Request
                 </button>
                 <button onClick={() => { setShowModal(true); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
                   Add Task
-                </button>
-                <button onClick={() => { addPersonalColumn(); setShowCreateMenu(false) }} className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-sq-card transition-colors">
-                  Add Column
                 </button>
               </div>
             </div>
@@ -422,6 +502,40 @@ export default function BoardPage() {
 
       {/* KANBAN COLUMNS — unified, draggable order */}
       <div className="flex gap-4 items-start flex-1 overflow-x-auto pb-4">
+
+        {/* Requests column — only shown when there are pending requests */}
+        {requestStatus && filteredTasks.some(t => t.status_id === requestStatus.id) && (
+          <div className="w-87 shrink-0 bg-sq-col rounded-xl p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: requestStatus.color }} />
+                <span className="text-white font-semibold text-base">Requests</span>
+              </div>
+              <div className="flex items-center gap-1 bg-sq-card px-3 py-0.5 rounded-full">
+                <span className="text-sq-nav-inactive text-xs font-medium">
+                  Task {filteredTasks.filter(t => t.status_id === requestStatus.id).length}
+                </span>
+              </div>
+            </div>
+            {filteredTasks.filter(t => t.status_id === requestStatus.id).map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                storyTitleMap={storyTitleMap}
+                requestStatusId={requestStatus.id}
+                isBlocked={blockedTaskIds.has(task.id)}
+                onOpen={() => setSelectedTaskId(task.id)}
+                onAccept={() => handleAccept(task.id)}
+                onReject={() => handleReject(task.id)}
+                onUserClick={setSelectedProfileId}
+              />
+            ))}
+            {filteredTasks.filter(t => t.status_id === requestStatus.id).length === 0 && (
+              <span className="text-sq-muted text-xs italic text-center mt-2">No pending requests</span>
+            )}
+          </div>
+        )}
+
         {columnOrder.map(colId => {
           const status = visibleStatuses.find(s => s.id === colId)
           const col    = personalColumns.find(c => c.id === colId)
@@ -431,9 +545,15 @@ export default function BoardPage() {
           const isColTarget  = dragOverColSlot === colId
 
           if (status) {
-            const columnTasks = status.label === 'To Do'
-              ? filteredTasks.filter(t => t.status_id === status.id || t.status_id === requestStatus?.id)
-              : filteredTasks.filter(t => t.status_id === status.id)
+            const isReviewer = currentUserRole === 'admin' || currentUserRole === 'lead'
+            const columnTasks = status.label === 'Review' && isReviewer
+              ? tasks.filter(t =>
+                  t.status_id === status.id &&
+                  (t.reviewer_user?.id === currentUserId || t.assignee === currentUserId) &&
+                  !personalColumnTaskIds.has(t.id)
+                )
+              : filteredTasks.filter(t => t.status_id === status.id && !personalColumnTaskIds.has(t.id))
+
             const isTaskOver = dragOverStatus === status.id
 
             return (
@@ -486,6 +606,11 @@ export default function BoardPage() {
                     requestStatusId={requestStatus?.id}
                     isBlocked={blockedTaskIds.has(task.id)}
                     onOpen={() => setSelectedTaskId(task.id)}
+                    onApprove={
+                      status.label === 'Review' && isReviewer && task.reviewer_user?.id === currentUserId
+                        ? () => handleApprove(task.id)
+                        : undefined
+                    }
                     onUserClick={setSelectedProfileId}
                   />
                 ))}
@@ -571,6 +696,37 @@ export default function BoardPage() {
             </div>
           )
         })}
+
+        {/* Add personal column */}
+        {showAddColumn ? (
+          <div className="w-72 shrink-0 bg-sq-col rounded-xl p-4 flex flex-col gap-3 self-start">
+            <span className="text-white font-semibold text-sm">New Personal Column</span>
+            <span className="text-sq-muted text-xs">Pick a base type:</span>
+            <div className="flex flex-col gap-2">
+              {statuses.filter(s => s.label !== 'Request' && s.label !== 'Done').map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => { addPersonalColumn(s.id); setShowAddColumn(false) }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-sq-card hover:brightness-110 transition-all text-left"
+                >
+                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="text-white text-sm font-medium">{s.label}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowAddColumn(false)} className="text-sq-muted hover:text-white text-xs transition-colors text-left">
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddColumn(true)}
+            className="w-10 h-10 shrink-0 rounded-full bg-sq-col flex items-center justify-center text-sq-muted hover:text-white hover:bg-sq-card transition-all self-start mt-1"
+            title="Add personal column"
+          >
+            <IconPlus size={18} />
+          </button>
+        )}
       </div>
 
       {selectedTaskId && (
@@ -585,6 +741,14 @@ export default function BoardPage() {
         <TaskModal
           onClose={() => setShowModal(false)}
           onCreated={() => { setShowModal(false); fetchTasks() }}
+        />
+      )}
+
+      {showRequestModal && (
+        <TaskModal
+          onClose={() => setShowRequestModal(false)}
+          onCreated={() => { setShowRequestModal(false); fetchTasks() }}
+          defaultStatusLabel="Request"
         />
       )}
 

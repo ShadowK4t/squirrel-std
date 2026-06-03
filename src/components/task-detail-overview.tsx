@@ -17,11 +17,18 @@ type Props = {
 }
 
 export default function TaskDetailOverview({ taskId, task, editing, editDescription, onDescriptionChange, onRefresh, stories, onUpdateParent }: Props) {
-  const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [previewUrl, setPreviewUrl]   = useState<string | null>(null)
-  const [newSubtask, setNewSubtask]   = useState('')
+  const [attachments, setAttachments]   = useState<Attachment[]>([])
+  const [previewUrl, setPreviewUrl]     = useState<string | null>(null)
+  const [newSubtask, setNewSubtask]     = useState('')
+  const [subtaskEdits, setSubtaskEdits] = useState<Record<string, string>>({})
 
   const supabase = createClient()
+
+  useEffect(() => {
+    const edits: Record<string, string> = {}
+    task.subtasks.forEach(s => { edits[s.id] = s.title })
+    setSubtaskEdits(edits)
+  }, [task.subtasks])
 
   useEffect(() => {
     supabase
@@ -83,6 +90,13 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
 
   async function deleteSubtask(id: string) {
     await supabase.from('subtasks').delete().eq('id', id)
+    onRefresh()
+  }
+
+  async function saveSubtask(sub: Subtask) {
+    const newText = subtaskEdits[sub.id]?.trim()
+    if (!newText || newText === sub.title) return
+    await supabase.from('subtasks').update({ title: newText }).eq('id', sub.id)
     onRefresh()
   }
 
@@ -151,7 +165,10 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
       {/* Story — tasks only */}
       {task.type === 'task' && (editing || !!task.parent?.title) && (
         <div className="flex flex-col gap-2">
-          <label className="text-white font-semibold text-base">Story</label>
+          <label className="flex items-center gap-2 text-white font-semibold text-base">
+            <img src="/icons/story-red.svg" width={16} height={16} alt="" />
+            Story
+          </label>
           {editing
             ? <select
                 value={task.parent_id ?? ''}
@@ -180,17 +197,27 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
                   <div key={sub.id} className="flex items-center gap-3 group">
                     <button
                       onClick={() => toggleSubtask(sub)}
-                      className="flex items-center gap-3 text-left flex-1 min-w-0"
+                      className="shrink-0"
                     >
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
                         sub.is_done ? 'bg-sq-accent border-sq-accent' : 'border-sq-muted group-hover:border-white'
                       }`}>
                         {sub.is_done && <IconCheck size={10} className="text-white" />}
                       </div>
-                      <span className={`text-base ${sub.is_done ? 'line-through text-sq-muted' : 'text-white'}`}>
+                    </button>
+                    {editing ? (
+                      <input
+                        value={subtaskEdits[sub.id] ?? sub.title}
+                        onChange={e => setSubtaskEdits(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                        onBlur={() => saveSubtask(sub)}
+                        onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                        className={`flex-1 min-w-0 bg-transparent text-base outline-none border-b border-transparent focus:border-sq-muted transition-colors ${sub.is_done ? 'line-through text-sq-muted' : 'text-white'}`}
+                      />
+                    ) : (
+                      <span className={`flex-1 min-w-0 text-base ${sub.is_done ? 'line-through text-sq-muted' : 'text-white'}`}>
                         {sub.title}
                       </span>
-                    </button>
+                    )}
                     <button
                       onClick={() => deleteSubtask(sub.id)}
                       className="text-sq-muted hover:text-sq-danger transition-colors opacity-0 group-hover:opacity-100 shrink-0"

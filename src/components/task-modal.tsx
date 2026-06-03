@@ -1,8 +1,9 @@
-'use client'
+﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { IconClipboard, IconLink, IconX, IconPlus, IconTrash, IconBooks } from '@tabler/icons-react'
+import { IconClipboard, IconLink, IconX, IconPlus, IconTrash } from '@tabler/icons-react'
+import { createNotification } from '@/lib/notifications'
 
 type Status = { id: string; label: string; color: string }
 type User   = { id: string; full_name: string }
@@ -19,9 +20,10 @@ type Props = {
   onCreated: () => void
   defaultType?: 'story' | 'task'
   defaultParentId?: string
+  defaultStatusLabel?: string
 }
 
-export default function TaskModal({ onClose, onCreated, defaultType = 'task', defaultParentId = '' }: Props) {
+export default function TaskModal({ onClose, onCreated, defaultType = 'task', defaultParentId = '', defaultStatusLabel = 'To Do' }: Props) {
   const [statuses, setStatuses]       = useState<Status[]>([])
   const [users, setUsers]             = useState<User[]>([])
   const [stories, setStories]         = useState<Story[]>([])
@@ -56,8 +58,8 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
       .then(({ data }) => {
         if (data) {
           setStatuses(data)
-          const todo = data.find(s => s.label === 'To Do')
-          if (todo) setStatusId(todo.id)
+          const match = data.find(s => s.label === defaultStatusLabel) ?? data.find(s => s.label === 'To Do')
+          if (match) setStatusId(match.id)
         }
       })
 
@@ -98,7 +100,20 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
   const teamBoards = boards.filter(b => b.team_id === teamId)
   const activeStatus = statuses.find(s => s.id === statusId)
 
-  function addSubtask() { setSubtasks(prev => [...prev, '']) }
+  const subtaskRefs = useRef<(HTMLInputElement | null)[]>([])
+  const pendingFocusRef = useRef(false)
+
+  function addSubtask() {
+    setSubtasks(prev => [...prev, ''])
+    pendingFocusRef.current = true
+  }
+
+  useEffect(() => {
+    if (pendingFocusRef.current) {
+      subtaskRefs.current[subtasks.length - 1]?.focus()
+      pendingFocusRef.current = false
+    }
+  }, [subtasks.length])
   function updateSubtask(i: number, v: string) { setSubtasks(prev => prev.map((s, idx) => idx === i ? v : s)) }
   function removeSubtask(i: number) { setSubtasks(prev => prev.filter((_, idx) => idx !== i)) }
 
@@ -168,6 +183,18 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
       }
     }
 
+    if (assigneeId) {
+      const isRequest = activeStatus?.label === 'Request'
+      await createNotification({
+        userId: assigneeId,
+        type: 'task_assigned',
+        taskId: task.id,
+        message: isRequest
+          ? `${currentUser?.full_name ?? 'Someone'} sent you a request: "${title.trim()}"`
+          : `${currentUser?.full_name ?? 'Someone'} assigned you a task: "${title.trim()}"`,
+      })
+    }
+
     setLoading(false)
     onCreated()
     onClose()
@@ -191,7 +218,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
                   type === 'story' ? 'bg-sq-accent text-white' : 'text-sq-muted hover:text-white'
                 }`}
               >
-                <IconBooks size={13} /> Story
+                <img src="/icons/story-red.svg" width={13} height={13} alt="" /> Story
               </button>
               <button
                 onClick={() => setType('task')}
@@ -205,7 +232,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
             <div className="flex items-center gap-3">
               {type === 'story'
-                ? <IconBooks size={24} className="text-sq-accent shrink-0" />
+                ? <img src="/icons/story-red.svg" width={24} height={24} alt="" className="shrink-0" />
                 : <IconClipboard size={24} className="text-sq-task-icon shrink-0" />
               }
               <input
@@ -302,7 +329,10 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
             {type === 'task' && (
               <div className="flex flex-col gap-2">
-                <label className="text-white font-semibold text-base">Story</label>
+                <label className="flex items-center gap-2 text-white font-semibold text-base">
+                  <img src="/icons/story-red.svg" width={16} height={16} alt="" />
+                  Story
+                </label>
                 <select
                   value={parentId}
                   onChange={e => setParentId(e.target.value)}
@@ -320,9 +350,17 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
                 {subtasks.map((sub, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <input
+                      ref={el => { subtaskRefs.current[i] = el }}
                       type="text"
                       value={sub}
                       onChange={e => updateSubtask(i, e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          if (i < subtasks.length - 1) subtaskRefs.current[i + 1]?.focus()
+                          else addSubtask()
+                        }
+                      }}
                       placeholder={`Subtask ${i + 1}`}
                       className="flex-1 bg-sq-col border border-sq-muted rounded text-white text-sm px-3 py-2 outline-none placeholder:text-sq-muted"
                     />

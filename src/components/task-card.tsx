@@ -1,7 +1,7 @@
 'use client'
 
 import {
-  IconBooks, IconClipboard, IconClock, IconFlame,
+  IconClipboard,
   IconLock, IconMessage, IconRecycle, IconSubtask, IconX,
 } from '@tabler/icons-react'
 
@@ -14,8 +14,8 @@ export type TaskCardTask = {
   status_id: string
   start_date: string | null
   parent_id: string | null
-  assignee_user: { id: string; full_name: string } | null
-  reviewer_user: { id: string; full_name: string } | null
+  assignee_user: { id: string; full_name: string; avatar_url?: string | null } | null
+  reviewer_user: { id: string; full_name: string; avatar_url?: string | null } | null
   subtasks: { count: number }[]
   comments: { count: number }[]
   task_boards: { board: { name: string; color: string } }[]
@@ -29,6 +29,9 @@ type Props = {
   isBlocked?: boolean
   onOpen: () => void
   onRemove?: () => void
+  onAccept?: () => void
+  onReject?: () => void
+  onApprove?: () => void
   onUserClick?: (userId: string) => void
 }
 
@@ -46,10 +49,10 @@ function initials(name: string): string {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
-export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlocked, onOpen, onRemove, onUserClick }: Props) {
+export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlocked, onOpen, onRemove, onAccept, onReject, onApprove, onUserClick }: Props) {
   const subtaskCount = task.subtasks[0]?.count ?? 0
   const commentCount = task.comments[0]?.count ?? 0
-  const people = [task.assignee_user, task.reviewer_user].filter(Boolean) as { id: string; full_name: string }[]
+  const people = [task.assignee_user, task.reviewer_user].filter(Boolean) as { id: string; full_name: string; avatar_url?: string | null }[]
 
   return (
     <div
@@ -67,7 +70,7 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlock
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-2 min-w-0">
           {task.type === 'story'
-            ? <IconBooks size={20} className="text-sq-accent shrink-0 mt-0.5" />
+            ? <img src="/icons/story.svg" width={20} height={20} alt="" className="shrink-0 mt-0.5" />
             : <IconClipboard size={20} className="text-sq-accent shrink-0 mt-0.5" />
           }
           <span className="text-white font-semibold text-sm leading-tight">{task.title}</span>
@@ -90,7 +93,7 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlock
       {/* Row 2: Period */}
       {task.start_date && (
         <div className="flex items-center gap-2 pl-1">
-          <IconClock size={15} className="text-sq-muted shrink-0" />
+          <img src="/icons/period.svg" width={15} height={15} alt="" className="shrink-0 opacity-60" />
           <span className="text-white text-xs">{timeElapsed(task.start_date)}</span>
         </div>
       )}
@@ -98,7 +101,7 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlock
       {/* Row 3: Story */}
       {task.type === 'task' && task.parent_id && storyTitleMap[task.parent_id] && (
         <div className="flex items-center gap-2 pl-1">
-          <IconBooks size={15} className="text-sq-muted shrink-0" />
+          <img src="/icons/story.svg" width={15} height={15} alt="" className="shrink-0 opacity-60" />
           <span className="text-white text-xs">{storyTitleMap[task.parent_id]}</span>
         </div>
       )}
@@ -119,11 +122,20 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlock
         </div>
       )}
 
+      {/* Approve — reviewer only, lead/admin */}
+      {onApprove && (
+        <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+          <button onClick={onApprove} className="flex-1 text-xs py-1 rounded-lg bg-green-700 text-white font-semibold hover:opacity-90 transition-opacity">
+            Approve
+          </button>
+        </div>
+      )}
+
       {/* Request accept/reject */}
       {requestStatusId && task.status_id === requestStatusId && (
         <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-          <button className="flex-1 text-xs py-1 rounded-lg bg-sq-accent text-white font-semibold">Accept</button>
-          <button className="flex-1 text-xs py-1 rounded-lg border border-sq-muted text-sq-muted font-semibold">Reject</button>
+          <button onClick={onAccept} className="flex-1 text-xs py-1 rounded-lg bg-sq-accent text-white font-semibold hover:opacity-90 transition-opacity">Accept</button>
+          <button onClick={onReject} className="flex-1 text-xs py-1 rounded-lg border border-sq-muted text-sq-muted font-semibold hover:border-red-400 hover:text-red-400 transition-colors">Reject</button>
         </div>
       )}
 
@@ -135,10 +147,13 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlock
                 <button
                   key={i}
                   onClick={e => { e.stopPropagation(); onUserClick?.(u.id) }}
-                  className="w-6 h-6 rounded-full bg-sq-accent border-2 border-sq-card -ml-1.5 first:ml-0 flex items-center justify-center hover:ring-2 hover:ring-white/40 transition-all"
+                  className="w-6 h-6 rounded-full bg-sq-accent border-2 border-sq-card -ml-1.5 first:ml-0 flex items-center justify-center hover:ring-2 hover:ring-white/40 transition-all overflow-hidden"
                   title={u.full_name}
                 >
-                  <span className="text-white text-xs font-bold leading-none">{initials(u.full_name)}</span>
+                  {u.avatar_url
+                    ? <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                    : <span className="text-white text-xs font-bold leading-none">{initials(u.full_name)}</span>
+                  }
                 </button>
               ))
             : <div className="w-6 h-6 rounded-full bg-sq-nav-inactive border-2 border-sq-card" />
@@ -161,7 +176,7 @@ export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlock
               <span>{subtaskCount}</span>
             </button>
           )}
-          {task.priority >= 3 && <IconFlame size={14} className="text-sq-danger" />}
+          {task.priority >= 3 && <img src="/icons/priority-red.svg" width={14} height={14} alt="" />}
         </div>
       </div>
     </div>

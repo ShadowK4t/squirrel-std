@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  IconChevronRight, IconClipboard, IconSubtask, IconBooks, IconPlus,
-  IconSearch, IconAdjustmentsHorizontal, IconX, IconEye, IconEyeOff, IconClock,
+  IconChevronRight, IconClipboard, IconSubtask, IconPlus,
+  IconSearch, IconX, IconEye, IconEyeOff,
 } from '@tabler/icons-react'
 import TaskDetailModal from '@/components/task-detail-modal'
 import TaskModal from '@/components/task-modal'
@@ -293,7 +293,7 @@ export default function BacklogPage() {
             onClick={() => setShowFilter(p => !p)}
             className={`flex items-center gap-2 transition-colors ${hasActiveFilters ? 'text-sq-accent' : 'text-sq-nav-inactive hover:text-white'}`}
           >
-            <IconAdjustmentsHorizontal size={18} />
+            <img src="/icons/filter.svg" width={18} height={18} alt="" />
             <span className="text-sm">Filter</span>
             {hasActiveFilters && (
               <span className="bg-sq-accent text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
@@ -344,7 +344,7 @@ export default function BacklogPage() {
           onClick={toggleShowFuture}
           className={`flex items-center gap-2 text-sm transition-colors ${showFuture ? 'text-sq-accent' : 'text-sq-nav-inactive hover:text-white'}`}
         >
-          <IconClock size={18} />
+          <img src="/icons/period.svg" width={18} height={18} alt="" />
           Future
         </button>
 
@@ -489,11 +489,11 @@ export default function BacklogPage() {
                               {allChildren.length > 0
                                 ? <IconChevronRight size={14} className="text-white/40 transition-transform"
                                     style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
-                                : <IconBooks size={14} className="text-sq-accent" />
+                                : <img src="/icons/story.svg" width={14} height={14} alt="" />
                               }
                             </div>
                             <div className="flex items-center gap-2 min-w-0">
-                              {allChildren.length > 0 && <IconBooks size={14} className="text-sq-accent shrink-0" />}
+                              {allChildren.length > 0 && <img src="/icons/story.svg" width={14} height={14} alt="" className="shrink-0" />}
                               <span
                                 className="text-white text-sm font-semibold truncate hover:underline cursor-pointer"
                                 onClick={() => setSelectedTaskId(story.id)}
@@ -612,10 +612,10 @@ export default function BacklogPage() {
                       <div className="flex items-center justify-center cursor-pointer" onClick={() => allChildren.length > 0 ? toggleStory(story.id) : setSelectedTaskId(story.id)}>
                         {allChildren.length > 0
                           ? <IconChevronRight size={14} className="text-white/40 transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
-                          : <IconBooks size={14} className="text-sq-accent" />}
+                          : <img src="/icons/story.svg" width={14} height={14} alt="" />}
                       </div>
                       <div className="flex items-center gap-2 min-w-0">
-                        {allChildren.length > 0 && <IconBooks size={14} className="text-sq-accent shrink-0" />}
+                        {allChildren.length > 0 && <img src="/icons/story.svg" width={14} height={14} alt="" className="shrink-0" />}
                         <span className="text-white text-sm font-semibold truncate hover:underline cursor-pointer" onClick={() => setSelectedTaskId(story.id)}>{story.title}</span>
                       </div>
                       <StatusBadge status={statusMap[story.status_id]} />
@@ -701,7 +701,7 @@ export default function BacklogPage() {
                   >
                     <div className="flex items-center justify-center">
                       {task.type === 'story'
-                        ? <IconBooks size={14} className="text-sq-accent opacity-50" />
+                        ? <img src="/icons/story.svg" width={14} height={14} alt="" className="opacity-50" />
                         : <IconClipboard size={14} className="text-sq-task-icon opacity-50" />}
                     </div>
                     <span

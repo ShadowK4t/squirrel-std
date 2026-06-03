@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { IconPencil, IconTrash, IconCornerDownRight } from '@tabler/icons-react'
 import type { TaskDetail, User } from './task-detail-types'
+import ProfileModal from '@/components/profile-modal'
 
 function renderWithMentions(content: string) {
   return content.split(/(@\S+)/).map((part, i) =>
@@ -30,6 +31,7 @@ export default function TaskDetailActivity({ taskId, task, users, onRefresh }: P
   const [submitting, setSubmitting]     = useState(false)
   const [replyingToId, setReplyingToId] = useState<string | null>(null)
   const [replyText, setReplyText]       = useState('')
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -111,7 +113,20 @@ export default function TaskDetailActivity({ taskId, task, users, onRefresh }: P
       <div key={c.id} className={`flex flex-col gap-1 ${indentClass}`}>
         <div className="bg-sq-col rounded-lg p-3 flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-sq-accent text-xs font-semibold">{c.user?.full_name}</span>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-sq-accent flex items-center justify-center overflow-hidden shrink-0">
+                {c.user?.avatar_url
+                  ? <img src={c.user.avatar_url} alt="" className="w-full h-full object-cover" />
+                  : <span className="text-white text-xs font-bold leading-none">{c.user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}</span>
+                }
+              </div>
+              <button
+                onClick={() => setViewingUserId(c.user_id)}
+                className="text-sq-accent text-xs font-semibold hover:underline text-left"
+              >
+                {c.user?.full_name}
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sq-muted text-xs">{new Date(c.created_at).toLocaleDateString()}</span>
               {isAuthor && (
@@ -246,6 +261,10 @@ export default function TaskDetailActivity({ taskId, task, users, onRefresh }: P
           Send
         </button>
       </div>
+
+      {viewingUserId && (
+        <ProfileModal userId={viewingUserId} onClose={() => setViewingUserId(null)} />
+      )}
     </div>
   )
 }

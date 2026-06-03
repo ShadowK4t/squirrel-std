@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { IconClipboard, IconBooks, IconX, IconPencil, IconDeviceFloppy, IconTrash } from '@tabler/icons-react'
+import { IconClipboard, IconX, IconPencil, IconDeviceFloppy, IconTrash } from '@tabler/icons-react'
+import { createNotification } from '@/lib/notifications'
 import type { Status, User, Team, TaskDetail } from './task-detail-types'
 import { PRIORITY_LABELS, PRIORITY_COLORS } from './task-detail-types'
 import TaskDetailOverview from './task-detail-overview'
@@ -52,7 +53,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
         reviewer_user:users!reviewer_id(full_name),
         creator_user:users!created_by(full_name),
         subtasks(id, title, is_done, position),
-        comments(id, user_id, parent_id, content, created_at, user:users!user_id(full_name)),
+        comments(id, user_id, parent_id, content, created_at, user:users!user_id(full_name, avatar_url)),
         task_boards(board_id, board:boards(name, color)),
         task_teams(is_responsible, team:teams(id, name, color))
       `)
@@ -107,6 +108,17 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
     }
     await supabase.from('tasks').update({ [field]: normalized }).eq('id', taskId)
     setTask(prev => prev ? { ...prev, [field]: normalized } : prev)
+    if (field === 'status_id' && task?.reviewer_id) {
+      const targetStatus = statuses.find(s => s.id === normalized)
+      if (targetStatus?.label === 'Review') {
+        await createNotification({
+          userId: task.reviewer_id,
+          type: 'review_requested',
+          taskId,
+          message: `A task is ready for your review: "${task.title}"`,
+        })
+      }
+    }
     onUpdated()
   }
 
@@ -161,7 +173,7 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
           <div className="flex flex-col gap-1 flex-1 min-w-0">
             <div className="flex items-center gap-3">
               {task.type === 'story'
-                ? <IconBooks size={24} className="text-sq-accent shrink-0" />
+                ? <img src="/icons/story-red.svg" width={24} height={24} alt="" className="shrink-0" />
                 : <IconClipboard size={24} className="text-sq-task-icon shrink-0" />
               }
               {editing
@@ -175,9 +187,13 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
               }
             </div>
             {(task.parent || task.parent_id) && (
-              <span className="text-sq-muted text-sm ml-9">
-                ↳ {task.parent?.title ?? stories.find(s => s.id === task.parent_id)?.title}
-              </span>
+              <div className="flex items-center gap-1.5 mt-3 ml-3">
+                <span className="text-sq-muted text-sm leading-none relative -top-1">↳</span>
+                <img src="/icons/story-red.svg" width={13} height={13} alt="" className="opacity-70 ml-5" />
+                <span className="text-sq-muted text-sm">
+                  {task.parent?.title ?? stories.find(s => s.id === task.parent_id)?.title}
+                </span>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-3 shrink-0 ml-4">
