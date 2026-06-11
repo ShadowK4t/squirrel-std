@@ -28,13 +28,12 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
-      // Invite flow — user needs to set a password
-      if (type === 'invite') {
+      if (type === 'invite' || type === 'recovery') {
         return NextResponse.redirect(new URL('/auth/set-password', requestUrl.origin))
       }
       return NextResponse.redirect(new URL('/board', requestUrl.origin))
     }
   }
 
-  return NextResponse.redirect(new URL('/login?error=invite_failed', requestUrl.origin))
+  return NextResponse.redirect(new URL('/login?error=auth_failed', requestUrl.origin))
 }

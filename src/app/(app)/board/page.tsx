@@ -32,11 +32,10 @@ type Task = {
   status_id: string
   needs_acceptance: boolean
   start_date: string | null
-  assignee: string | null
   reviewer_id: string | null
   created_by: string | null
   parent_id: string | null
-  assignee_user: { id: string; full_name: string } | null
+  task_assignees: { user: { id: string; full_name: string; avatar_url?: string | null } }[]
   reviewer_user: { id: string; full_name: string } | null
   subtasks: { count: number }[]
   comments: { count: number }[]
@@ -60,8 +59,8 @@ function initials(name: string): string {
 }
 
 const TASK_SELECT = `
-  id, type, title, description, version, priority, status_id, needs_acceptance, start_date, assignee, reviewer_id, created_by, parent_id, related_task_ids,
-  assignee_user:users!assignee(id, full_name, avatar_url),
+  id, type, title, description, version, priority, status_id, needs_acceptance, start_date, reviewer_id, created_by, parent_id, related_task_ids,
+  task_assignees(user:users(id, full_name, avatar_url)),
   reviewer_user:users!reviewer_id(id, full_name, avatar_url),
   subtasks(count),
   comments(count),
@@ -128,6 +127,12 @@ export default function BoardPage() {
       setSelectedTaskId(taskParam)
       window.history.replaceState({}, '', '/board')
     }
+
+    function handleOpenTask(e: Event) {
+      setSelectedTaskId((e as CustomEvent<{ taskId: string }>).detail.taskId)
+    }
+    window.addEventListener('open-task', handleOpenTask)
+    return () => window.removeEventListener('open-task', handleOpenTask)
   }, [])
 
   useEffect(() => {
@@ -188,7 +193,16 @@ export default function BoardPage() {
   async function handleApprove(taskId: string) {
     const doneStatus = statuses.find(s => s.label === 'Done')
     if (!doneStatus) return
+    const task = tasks.find(t => t.id === taskId)
     await supabase.from('tasks').update({ status_id: doneStatus.id }).eq('id', taskId)
+    for (const ta of (task?.task_assignees ?? [])) {
+      await createNotification({
+        userId: ta.user.id,
+        type: 'task_accepted',
+        taskId,
+        message: `Your task "${task!.title}" was approved`,
+      })
+    }
     fetchTasks()
   }
 
@@ -332,7 +346,7 @@ export default function BoardPage() {
   const filteredTasks = tasks.filter(task => {
     if (task.type === 'story') return false
     if (!showFuture && task.start_date && new Date(task.start_date) > today) return false
-    if (filterUsers.size > 0 && (!task.assignee || !filterUsers.has(task.assignee))) return false
+    if (filterUsers.size > 0 && !task.task_assignees.some(ta => filterUsers.has(ta.user.id))) return false
     if (search && !task.title.toLowerCase().includes(search.toLowerCase()) &&
         !task.description?.toLowerCase().includes(search.toLowerCase())) return false
     if (filterPriorities.size > 0 && !filterPriorities.has(task.priority)) return false
@@ -549,7 +563,7 @@ export default function BoardPage() {
             const columnTasks = status.label === 'Review' && isReviewer
               ? tasks.filter(t =>
                   t.status_id === status.id &&
-                  (t.reviewer_user?.id === currentUserId || t.assignee === currentUserId) &&
+                  (t.reviewer_user?.id === currentUserId || t.task_assignees.some(ta => ta.user.id === currentUserId)) &&
                   !personalColumnTaskIds.has(t.id)
                 )
               : filteredTasks.filter(t => t.status_id === status.id && !personalColumnTaskIds.has(t.id))

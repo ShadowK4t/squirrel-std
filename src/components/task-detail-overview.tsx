@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { IconPlus, IconCheck, IconX } from '@tabler/icons-react'
+import RichTextEditor from '@/components/rich-text-editor'
+import RichTextDisplay from '@/components/rich-text-display'
 import type { TaskDetail, Attachment, Subtask } from './task-detail-types'
 
 type Props = {
@@ -107,14 +109,13 @@ export default function TaskDetailOverview({ taskId, task, editing, editDescript
         <div className="flex flex-col gap-2">
           <label className="text-white font-semibold text-base">Description</label>
           {editing
-            ? <textarea
-                value={editDescription}
-                onChange={e => onDescriptionChange(e.target.value)}
+            ? <RichTextEditor
+                content={editDescription}
+                onChange={onDescriptionChange}
                 placeholder="Describe the task..."
-                rows={4}
-                className="bg-sq-col border border-sq-muted rounded text-white text-sm p-3 outline-none resize-none placeholder:text-sq-muted"
+                minHeight="96px"
               />
-            : <p className="text-white/80 text-base leading-relaxed">{task.description}</p>
+            : <RichTextDisplay html={task.description ?? ''} className="text-base" />
           }
         </div>
       )}

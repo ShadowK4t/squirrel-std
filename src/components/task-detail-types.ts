@@ -17,12 +17,11 @@ export type TaskDetail = {
   start_date: string | null
   end_date: string | null
   needs_acceptance: boolean
-  assignee: string | null
   reviewer_id: string | null
   created_by: string | null
   parent_id: string | null
   parent: { title: string } | null
-  assignee_user: { full_name: string } | null
+  task_assignees: { user: { id: string; full_name: string; avatar_url?: string | null } }[]
   reviewer_user: { full_name: string } | null
   creator_user: { full_name: string } | null
   subtasks: Subtask[]

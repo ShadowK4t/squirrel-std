@@ -47,9 +47,9 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
       .from('tasks')
       .select(`
         id, type, title, description, version, priority, status_id,
-        start_date, end_date, needs_acceptance, assignee, reviewer_id, created_by, parent_id, related_task_ids,
+        start_date, end_date, needs_acceptance, reviewer_id, created_by, parent_id, related_task_ids,
         parent:tasks!parent_id(title),
-        assignee_user:users!assignee(full_name),
+        task_assignees(user:users(id, full_name, avatar_url)),
         reviewer_user:users!reviewer_id(full_name),
         creator_user:users!created_by(full_name),
         subtasks(id, title, is_done, position),
@@ -120,6 +120,16 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
       }
     }
     onUpdated()
+  }
+
+  async function addAssignee(userId: string) {
+    await supabase.from('task_assignees').upsert({ task_id: taskId, user_id: userId }, { onConflict: 'task_id,user_id' })
+    fetchTask()
+  }
+
+  async function removeAssignee(userId: string) {
+    await supabase.from('task_assignees').delete().eq('task_id', taskId).eq('user_id', userId)
+    fetchTask()
   }
 
   async function updateTeam(teamId: string) {
@@ -267,18 +277,30 @@ export default function TaskDetailModal({ taskId, onClose, onUpdated }: Props) {
           {/* Right — always-visible sidebar */}
           <div className="w-56 bg-sq-col p-4 flex flex-col gap-4 shrink-0 overflow-y-auto">
 
-            {/* Assignee */}
-            {(editing || task.assignee_user) && (
-              <div className="flex flex-col gap-1">
-                <label className="text-white text-sm font-medium">Assignee</label>
-                {editing
-                  ? <select value={task.assignee ?? ''} onChange={e => updateField('assignee', e.target.value)}
-                      className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
-                      <option value="">None</option>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                    </select>
-                  : <span className="text-white text-sm">{task.assignee_user?.full_name}</span>
-                }
+            {/* Assignees */}
+            {(editing || task.task_assignees.length > 0) && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-white text-sm font-medium">Assignees</label>
+                {task.task_assignees.length > 0 && (
+                  <div className="flex flex-col gap-0.5">
+                    {task.task_assignees.map(ta => (
+                      <div key={ta.user.id} className="flex items-center justify-between gap-2">
+                        <span className="text-white text-sm">{ta.user.full_name}</span>
+                        {editing && (
+                          <button onClick={() => removeAssignee(ta.user.id)} className="text-sq-muted hover:text-sq-danger transition-colors text-xs">×</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {editing && users.filter(u => !task.task_assignees.some(ta => ta.user.id === u.id)).length > 0 && (
+                  <select value="" onChange={e => e.target.value && addAssignee(e.target.value)}
+                    className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-1.5 outline-none">
+                    <option value="">+ Add assignee</option>
+                    {users.filter(u => !task.task_assignees.some(ta => ta.user.id === u.id))
+                      .map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                  </select>
+                )}
               </div>
             )}
 

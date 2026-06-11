@@ -14,7 +14,7 @@ export type TaskCardTask = {
   status_id: string
   start_date: string | null
   parent_id: string | null
-  assignee_user: { id: string; full_name: string; avatar_url?: string | null } | null
+  task_assignees: { user: { id: string; full_name: string; avatar_url?: string | null } }[]
   reviewer_user: { id: string; full_name: string; avatar_url?: string | null } | null
   subtasks: { count: number }[]
   comments: { count: number }[]
@@ -52,7 +52,7 @@ function initials(name: string): string {
 export default function TaskCard({ task, storyTitleMap, requestStatusId, isBlocked, onOpen, onRemove, onAccept, onReject, onApprove, onUserClick }: Props) {
   const subtaskCount = task.subtasks[0]?.count ?? 0
   const commentCount = task.comments[0]?.count ?? 0
-  const people = [task.assignee_user, task.reviewer_user].filter(Boolean) as { id: string; full_name: string; avatar_url?: string | null }[]
+  const people = [...task.task_assignees.map(ta => ta.user), task.reviewer_user].filter(Boolean) as { id: string; full_name: string; avatar_url?: string | null }[]
 
   return (
     <div

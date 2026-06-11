@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -31,7 +31,7 @@ type Task = {
   status_id: string
   priority: number
   start_date: string | null
-  assignee_user: { full_name: string } | null
+  task_assignees: { user: { full_name: string } }[]
   subtasks: { count: number }[]
   task_boards: { board_id: string }[]
 }
@@ -107,7 +107,7 @@ export default function BacklogPage() {
       supabase.from('teams').select('id, name, color').order('name'),
       supabase.from('boards').select('id, name, color, team_id').order('name'),
       supabase.from('tasks')
-        .select('id, title, type, parent_id, status_id, priority, start_date, assignee_user:users!assignee(full_name), subtasks(count), task_boards(board_id)')
+        .select('id, title, type, parent_id, status_id, priority, start_date, task_assignees(user:users(full_name)), subtasks(count), task_boards(board_id)')
         .order('type', { ascending: false })
         .order('title'),
       supabase.from('statuses').select('id, label, color').order('position'),
@@ -510,7 +510,7 @@ export default function BacklogPage() {
                             <StatusBadge status={statusMap[story.status_id]} />
                             <span className="text-white text-xs">{timeElapsed(story.start_date)}</span>
                             <PriorityBadge priority={story.priority} />
-                            <span className="text-white text-xs truncate">{story.assignee_user?.full_name ?? '—'}</span>
+                            <span className="text-white text-xs truncate">{story.task_assignees.map(ta => ta.user.full_name).join(', ') || '—'}</span>
                             <span className="text-white/50 text-xs text-center">{story.subtasks[0]?.count ?? 0}</span>
                           </div>
 
@@ -535,7 +535,7 @@ export default function BacklogPage() {
                               <StatusBadge status={statusMap[child.status_id]} />
                               <span className="text-white text-xs">{timeElapsed(child.start_date)}</span>
                               <PriorityBadge priority={child.priority} />
-                              <span className="text-white text-xs truncate">{child.assignee_user?.full_name ?? '—'}</span>
+                              <span className="text-white text-xs truncate">{child.task_assignees.map(ta => ta.user.full_name).join(', ') || '—'}</span>
                               <div className="flex items-center justify-center gap-1 text-white/40 text-xs">
                                 <IconSubtask size={11} />
                                 <span>{child.subtasks[0]?.count ?? 0}</span>
@@ -566,7 +566,7 @@ export default function BacklogPage() {
                         <StatusBadge status={statusMap[task.status_id]} />
                         <span className="text-white text-xs">{timeElapsed(task.start_date)}</span>
                         <PriorityBadge priority={task.priority} />
-                        <span className="text-white text-xs truncate">{task.assignee_user?.full_name ?? '—'}</span>
+                        <span className="text-white text-xs truncate">{task.task_assignees.map(ta => ta.user.full_name).join(', ') || '—'}</span>
                         <div className="flex items-center justify-center gap-1 text-white/40 text-xs">
                           <IconSubtask size={11} />
                           <span>{task.subtasks[0]?.count ?? 0}</span>
@@ -621,7 +621,7 @@ export default function BacklogPage() {
                       <StatusBadge status={statusMap[story.status_id]} />
                       <span className="text-white text-xs">{timeElapsed(story.start_date)}</span>
                       <PriorityBadge priority={story.priority} />
-                      <span className="text-white text-xs truncate">{story.assignee_user?.full_name ?? '—'}</span>
+                      <span className="text-white text-xs truncate">{story.task_assignees.map(ta => ta.user.full_name).join(', ') || '—'}</span>
                       <span className="text-white/50 text-xs text-center">{story.subtasks[0]?.count ?? 0}</span>
                     </div>
                     {isOpen && visibleChildren.map(child => (
@@ -634,7 +634,7 @@ export default function BacklogPage() {
                         <StatusBadge status={statusMap[child.status_id]} />
                         <span className="text-white text-xs">{timeElapsed(child.start_date)}</span>
                         <PriorityBadge priority={child.priority} />
-                        <span className="text-white text-xs truncate">{child.assignee_user?.full_name ?? '—'}</span>
+                        <span className="text-white text-xs truncate">{child.task_assignees.map(ta => ta.user.full_name).join(', ') || '—'}</span>
                         <div className="flex items-center justify-center gap-1 text-white/40 text-xs">
                           <IconSubtask size={11} /><span>{child.subtasks[0]?.count ?? 0}</span>
                         </div>
@@ -650,7 +650,7 @@ export default function BacklogPage() {
                   <StatusBadge status={statusMap[task.status_id]} />
                   <span className="text-white text-xs">{timeElapsed(task.start_date)}</span>
                   <PriorityBadge priority={task.priority} />
-                  <span className="text-white text-xs truncate">{task.assignee_user?.full_name ?? '—'}</span>
+                  <span className="text-white text-xs truncate">{task.task_assignees.map(ta => ta.user.full_name).join(', ') || '—'}</span>
                   <div className="flex items-center justify-center gap-1 text-white/40 text-xs">
                     <IconSubtask size={11} /><span>{task.subtasks[0]?.count ?? 0}</span>
                   </div>
@@ -713,7 +713,7 @@ export default function BacklogPage() {
                     <StatusBadge status={statusMap[task.status_id]} />
                     <span className="text-white/50 text-xs">{timeElapsed(task.start_date)}</span>
                     <PriorityBadge priority={task.priority} />
-                    <span className="text-white/50 text-xs truncate">{task.assignee_user?.full_name ?? '—'}</span>
+                    <span className="text-white/50 text-xs truncate">{task.task_assignees.map(ta => ta.user.full_name).join(', ') || '—'}</span>
                     <div className="flex items-center justify-center gap-1 text-white/30 text-xs">
                       <IconSubtask size={11} /><span>{task.subtasks[0]?.count ?? 0}</span>
                     </div>

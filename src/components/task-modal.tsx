@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { IconClipboard, IconLink, IconX, IconPlus, IconTrash } from '@tabler/icons-react'
+import RichTextEditor from '@/components/rich-text-editor'
 import { createNotification } from '@/lib/notifications'
 
 type Status = { id: string; label: string; color: string }
@@ -38,7 +39,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
   const [title, setTitle]             = useState('')
   const [description, setDescription] = useState('')
   const [statusId, setStatusId]       = useState('')
-  const [assigneeId, setAssigneeId]   = useState('')
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([])
   const [reviewerId, setReviewerId]   = useState('')
   const [priority, setPriority]       = useState(2)
   const [startDate, setStartDate]     = useState('')
@@ -119,7 +120,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
   async function handleSubmit() {
     if (!title.trim()) return setError('Title is required')
-    if (type === 'task' && !assigneeId) return setError('Assignee is required')
+    
     if (type === 'task' && !reviewerId) return setError('Reviewer is required')
 
     setLoading(true)
@@ -133,7 +134,7 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
         title: title.trim(),
         description: description.trim() || null,
         status_id: statusId,
-        assignee: assigneeId || null,
+        assignee: null,
         reviewer_id: reviewerId || null,
         priority,
         start_date: startDate || null,
@@ -183,16 +184,21 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
       }
     }
 
-    if (assigneeId) {
+    if (assigneeIds.length > 0) {
+      await supabase.from('task_assignees').insert(
+        assigneeIds.map(userId => ({ task_id: task.id, user_id: userId }))
+      )
       const isRequest = activeStatus?.label === 'Request'
-      await createNotification({
-        userId: assigneeId,
-        type: 'task_assigned',
-        taskId: task.id,
-        message: isRequest
-          ? `${currentUser?.full_name ?? 'Someone'} sent you a request: "${title.trim()}"`
-          : `${currentUser?.full_name ?? 'Someone'} assigned you a task: "${title.trim()}"`,
-      })
+      for (const userId of assigneeIds) {
+        await createNotification({
+          userId,
+          type: 'task_assigned',
+          taskId: task.id,
+          message: isRequest
+            ? `${currentUser?.full_name ?? 'Someone'} sent you a request: "${title.trim()}"`
+            : `${currentUser?.full_name ?? 'Someone'} assigned you a task: "${title.trim()}"`,
+        })
+      }
     }
 
     setLoading(false)
@@ -276,12 +282,11 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
 
             <div className="flex flex-col gap-2">
               <label className="text-white font-semibold text-base">Description</label>
-              <textarea
-                value={description}
-                onChange={e => setDescription(e.target.value)}
+              <RichTextEditor
+                content={description}
+                onChange={setDescription}
                 placeholder={type === 'story' ? 'What is this story about?' : 'Describe the task...'}
-                rows={3}
-                className="bg-sq-col border border-sq-muted rounded text-white text-sm p-3 outline-none resize-none placeholder:text-sq-muted"
+                minHeight="72px"
               />
             </div>
 
@@ -429,13 +434,30 @@ export default function TaskModal({ onClose, onCreated, defaultType = 'task', de
           {/* RIGHT sidebar */}
           <div className="w-56 bg-sq-col rounded-br-xl p-4 flex flex-col gap-4 shrink-0">
 
-            <div className="flex flex-col gap-1">
-              <label className="text-white text-sm font-medium">Assignee <span className="text-red-500">*</span></label>
-              <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
-                className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-2 outline-none">
-                <option value="">Select...</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-              </select>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-white text-sm font-medium">Assignees</label>
+              {assigneeIds.length > 0 && (
+                <div className="flex flex-col gap-0.5">
+                  {assigneeIds.map(id => {
+                    const u = users.find(u => u.id === id)
+                    return u ? (
+                      <div key={id} className="flex items-center justify-between">
+                        <span className="text-white text-sm">{u.full_name}</span>
+                        <button onClick={() => setAssigneeIds(prev => prev.filter(a => a !== id))} className="text-sq-muted hover:text-sq-danger transition-colors text-xs">×</button>
+                      </div>
+                    ) : null
+                  })}
+                </div>
+              )}
+              {users.filter(u => !assigneeIds.includes(u.id)).length > 0 && (
+                <select value="" onChange={e => e.target.value && setAssigneeIds(prev => [...prev, e.target.value])}
+                  className="bg-sq-card border border-sq-muted rounded text-white text-sm px-2 py-1.5 outline-none">
+                  <option value="">+ Add assignee</option>
+                  {users.filter(u => !assigneeIds.includes(u.id)).map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="flex flex-col gap-1">

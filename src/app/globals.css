@@ -150,6 +150,34 @@
   --sq-task-icon: #8B84EA;
 }
 
+/* Tiptap editor */
+.tiptap { outline: none; }
+.tiptap p { margin-bottom: 0.3em; }
+.tiptap p:last-child { margin-bottom: 0; }
+.tiptap strong { font-weight: 600; }
+.tiptap em { font-style: italic; }
+.tiptap s { text-decoration: line-through; }
+.tiptap ul { list-style-type: disc; padding-left: 1.4em; margin-bottom: 0.4em; }
+.tiptap ol { list-style-type: decimal; padding-left: 1.4em; margin-bottom: 0.4em; }
+.tiptap li p { margin-bottom: 0; }
+.tiptap p.is-editor-empty:first-child::before {
+  color: #6B6B6B;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Rich text display */
+.rich-text p { margin-bottom: 0.4em; }
+.rich-text p:last-child { margin-bottom: 0; }
+.rich-text strong { font-weight: 600; color: white; }
+.rich-text em { font-style: italic; }
+.rich-text s { text-decoration: line-through; }
+.rich-text ul { list-style-type: disc; padding-left: 1.4em; margin-bottom: 0.4em; }
+.rich-text ol { list-style-type: decimal; padding-left: 1.4em; margin-bottom: 0.4em; }
+.rich-text li p { margin-bottom: 0; }
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

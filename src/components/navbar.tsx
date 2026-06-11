@@ -81,7 +81,13 @@ export default function Navbar() {
           {userId && (
             <NotificationDropdown
               userId={userId}
-              onTaskClick={(taskId) => router.push(`/board?task=${taskId}`)}
+              onTaskClick={(taskId) => {
+                if (window.location.pathname === '/board') {
+                  window.dispatchEvent(new CustomEvent('open-task', { detail: { taskId } }))
+                } else {
+                  router.push(`/board?task=${taskId}`)
+                }
+              }}
             />
           )}
           {role === 'admin' && (
